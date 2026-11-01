@@ -42,7 +42,7 @@ tasks.test {
     }
 }
 
-val packageApp by tasks.registering(Exec::class) {
+val packageApp = tasks.register<Exec>("packageApp") {
     group = "distribution"
     description = "Builds a Windows app image with jpackage"
     dependsOn(tasks.installDist)
@@ -53,7 +53,12 @@ val packageApp by tasks.registering(Exec::class) {
     val destDir = layout.buildDirectory.dir("jpackage")
 
     doFirst {
-        destDir.get().asFile.deleteRecursively()
+        val target = destDir.get().asFile
+        logger.lifecycle("Cleaning {}", target)
+        project.delete(target)
+        if (target.exists()) {
+            throw IllegalStateException("Could not clean $target")
+        }
     }
     commandLine(
         "${System.getProperty("java.home")}/bin/jpackage",
