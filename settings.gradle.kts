@@ -15,3 +15,5 @@ dependencyResolutionManagement {
 rootProject.name = "ItemSync"
 
 include(":core-domain")
+include(":core-store")
+include(":core-sync")
