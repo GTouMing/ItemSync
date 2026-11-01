@@ -13,6 +13,8 @@ public final class WindowsAutostart {
 
     private static final String RUN_KEY =
             "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+    private static final String RUN_KEY_FULL =
+            "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
     private static final String VALUE_NAME = "ItemSync";
 
     private WindowsAutostart() {
@@ -38,6 +40,9 @@ public final class WindowsAutostart {
         try {
             writeRegFile(file, launchCommand);
             run(List.of("reg", "import", file.toString()));
+            if (!isEnabled()) {
+                throw new IOException("autostart value was not written");
+            }
         } finally {
             Files.deleteIfExists(file);
         }
@@ -46,7 +51,7 @@ public final class WindowsAutostart {
     static void writeRegFile(Path file, String launchCommand) throws IOException {
         String escaped = launchCommand.replace("\\", "\\\\").replace("\"", "\\\"");
         String content = "Windows Registry Editor Version 5.00\r\n\r\n"
-                + "[" + RUN_KEY + "]\r\n"
+                + "[" + RUN_KEY_FULL + "]\r\n"
                 + "\"" + VALUE_NAME + "\"=\"" + escaped + "\"\r\n";
         byte[] body = content.getBytes(StandardCharsets.UTF_16LE);
         byte[] data = new byte[body.length + 2];

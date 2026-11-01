@@ -27,7 +27,8 @@ class WindowsAutostartTest {
         assertEquals((byte) 0xFE, bytes[1]);
         String content = new String(bytes, 2, bytes.length - 2, StandardCharsets.UTF_16LE);
         String escaped = launch.replace("\\", "\\\\").replace("\"", "\\\"");
-        assertTrue(content.contains("[HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run]"));
+        assertTrue(content.contains(
+                "[HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run]"));
         assertTrue(content.contains("\"ItemSync\"=\"" + escaped + "\""));
     }
 
