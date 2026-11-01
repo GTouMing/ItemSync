@@ -41,3 +41,35 @@ tasks.test {
         events("passed", "skipped", "failed")
     }
 }
+
+val packageApp by tasks.registering(Exec::class) {
+    group = "distribution"
+    description = "Builds a Windows app image with jpackage"
+    dependsOn(tasks.installDist)
+
+    val appVersion = project.version.toString().substringBefore('-')
+    val mainJar = "desktop-${project.version}.jar"
+    val inputDir = layout.buildDirectory.dir("install/ItemSync/lib")
+    val destDir = layout.buildDirectory.dir("jpackage")
+
+    doFirst {
+        destDir.get().asFile.deleteRecursively()
+    }
+    commandLine(
+        "${System.getProperty("java.home")}/bin/jpackage",
+        "--type", "app-image",
+        "--name", "ItemSync",
+        "--app-version", appVersion,
+        "--vendor", "ItemSync",
+        "--input", inputDir.get().asFile.absolutePath,
+        "--dest", destDir.get().asFile.absolutePath,
+        "--main-jar", mainJar,
+        "--main-class", "github.gtouming.itemsync.desktop.DesktopLauncher",
+        "--java-options", "-Dfile.encoding=UTF-8"
+    )
+    doLast {
+        logger.lifecycle(
+            "App image: ${destDir.get().asFile.resolve("ItemSync/ItemSync.exe")}"
+        )
+    }
+}
