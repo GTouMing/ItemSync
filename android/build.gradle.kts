@@ -29,9 +29,19 @@ android {
             )
         }
     }
+
+    packaging {
+        resources {
+            excludes += "/META-INF/LICENSE.md"
+            excludes += "/META-INF/NOTICE.md"
+            excludes += "/META-INF/LICENSE.txt"
+            excludes += "/META-INF/NOTICE.txt"
+        }
+    }
 }
 
 dependencies {
+    implementation(project(":core-sync"))
     implementation(project(":core-store"))
 
     testImplementation(project(":core-store-testkit"))
