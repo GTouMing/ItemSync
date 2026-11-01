@@ -16,6 +16,7 @@ tasks.withType<JavaCompile>().configureEach {
 dependencies {
     api(project(":core-domain"))
 
+    testImplementation(project(":core-store-testkit"))
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.sqlite.jdbc)
     testRuntimeOnly(libs.junit.platform.launcher)
