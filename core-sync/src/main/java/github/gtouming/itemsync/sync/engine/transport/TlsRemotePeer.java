@@ -78,6 +78,10 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
         return remoteNodeId;
     }
 
+    public void send(Frame frame) throws IOException {
+        connection().send(frame);
+    }
+
     @Override
     public List<ManifestEntry> manifest(SyncRootId rootId, VersionVector since) throws IOException {
         ManifestCollector collector = new ManifestCollector(timeout);
