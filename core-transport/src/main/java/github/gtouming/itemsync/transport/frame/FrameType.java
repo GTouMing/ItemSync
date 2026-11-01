@@ -8,7 +8,12 @@ public enum FrameType {
     BLOB_GET(5),
     BLOB_CHUNK(6),
     BLOB_RESULT(7),
-    ERROR(8);
+    ERROR(8),
+    NOTIFY(9),
+    NOTIFY_ACK(10),
+    MANIFEST_REQUEST(11),
+    MANIFEST_PAGE(12),
+    MANIFEST_END(13);
 
     private final int code;
 
