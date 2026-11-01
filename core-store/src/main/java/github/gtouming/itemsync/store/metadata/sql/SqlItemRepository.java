@@ -1,0 +1,199 @@
+package github.gtouming.itemsync.store.metadata.sql;
+
+import github.gtouming.itemsync.domain.identity.ItemId;
+import github.gtouming.itemsync.domain.identity.LogicalPath;
+import github.gtouming.itemsync.domain.identity.NodeId;
+import github.gtouming.itemsync.domain.identity.SyncRootId;
+import github.gtouming.itemsync.domain.identity.VersionId;
+import github.gtouming.itemsync.domain.model.Item;
+import github.gtouming.itemsync.domain.model.ItemKind;
+import github.gtouming.itemsync.domain.replication.VersionVector;
+import github.gtouming.itemsync.store.metadata.MetadataStore.ItemRepository;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+final class SqlItemRepository implements ItemRepository {
+
+    private static final String COLUMNS =
+            "id, root_id, logical_path, kind, current_version_id, deleted_at";
+
+    private final SqlSession session;
+
+    SqlItemRepository(SqlSession session) {
+        this.session = session;
+    }
+
+    @Override
+    public void upsert(Item item) {
+        session.runAtomically(() -> {
+            session.update("INSERT OR REPLACE INTO item(" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?)",
+                    item.id().value(), item.rootId().value(), item.logicalPath().value(), item.kind().name(),
+                    item.currentVersion() == null ? null : item.currentVersion().value(), item.deletedAt());
+            replaceVector(item.rootId(), item.logicalPath(), item.vector());
+        });
+    }
+
+    @Override
+    public Optional<Item> find(SyncRootId rootId, LogicalPath path) {
+        return session.queryOne("SELECT " + COLUMNS + " FROM item WHERE root_id = ? AND logical_path = ?",
+                        SqlItemRepository::mapRow, rootId.value(), path.value())
+                .map(row -> row.toItem(loadVector(rootId, path)));
+    }
+
+    @Override
+    public Optional<Item> findById(ItemId id) {
+        return session.queryOne("SELECT " + COLUMNS + " FROM item WHERE id = ?",
+                        SqlItemRepository::mapRow, id.value())
+                .map(row -> row.toItem(loadVector(
+                        SyncRootId.of(row.rootId()), LogicalPath.of(row.logicalPath()))));
+    }
+
+    @Override
+    public ItemPage page(SyncRootId rootId, String cursor, int limit) {
+        if (limit <= 0) {
+            throw new IllegalArgumentException("limit must be positive, got " + limit);
+        }
+        boolean hasCursor = cursor != null;
+        String sql = "SELECT i.id, i.root_id, i.logical_path, i.kind, i.current_version_id, i.deleted_at, "
+                + "v.node_id AS vector_node_id, v.counter AS vector_counter "
+                + "FROM (SELECT " + COLUMNS + " FROM item WHERE root_id = ?"
+                + (hasCursor ? " AND logical_path > ?" : "")
+                + " ORDER BY logical_path LIMIT ?) i "
+                + "LEFT JOIN item_vector v ON v.root_id = i.root_id AND v.logical_path = i.logical_path "
+                + "ORDER BY i.logical_path, v.node_id";
+
+        List<Object> arguments = new ArrayList<>();
+        arguments.add(rootId.value());
+        if (hasCursor) {
+            arguments.add(cursor);
+        }
+        arguments.add(limit);
+
+        List<Item> items = new ArrayList<>();
+        ItemAccumulator accumulator = new ItemAccumulator(items);
+        session.queryEach(sql, accumulator::accept, arguments.toArray());
+        accumulator.finish();
+
+        String nextCursor = items.size() == limit
+                ? items.get(items.size() - 1).logicalPath().value()
+                : null;
+        return new ItemPage(List.copyOf(items), nextCursor);
+    }
+
+    @Override
+    public void delete(ItemId id) {
+        session.runAtomically(() -> {
+            Optional<String[]> keys = session.queryOne(
+                    "SELECT root_id, logical_path FROM item WHERE id = ?",
+                    cursor -> new String[] {cursor.getString("root_id"), cursor.getString("logical_path")},
+                    id.value());
+            if (keys.isEmpty()) {
+                return;
+            }
+            session.update("DELETE FROM item_vector WHERE root_id = ? AND logical_path = ?",
+                    keys.get()[0], keys.get()[1]);
+            session.update("DELETE FROM item WHERE id = ?", id.value());
+        });
+    }
+
+    private void replaceVector(SyncRootId rootId, LogicalPath path, VersionVector vector) {
+        session.update("DELETE FROM item_vector WHERE root_id = ? AND logical_path = ?",
+                rootId.value(), path.value());
+        for (NodeId node : vector.nodes()) {
+            session.update("INSERT INTO item_vector(root_id, logical_path, node_id, counter) VALUES (?, ?, ?, ?)",
+                    rootId.value(), path.value(), node.value(), vector.counterOf(node));
+        }
+    }
+
+    private VersionVector loadVector(SyncRootId rootId, LogicalPath path) {
+        List<Map.Entry<NodeId, Long>> counters = session.query(
+                "SELECT node_id, counter FROM item_vector WHERE root_id = ? AND logical_path = ?",
+                cursor -> Map.entry(NodeId.of(cursor.getString("node_id")), cursor.getLong("counter")),
+                rootId.value(), path.value());
+        if (counters.isEmpty()) {
+            return VersionVector.empty();
+        }
+        Map<NodeId, Long> vector = new LinkedHashMap<>();
+        for (Map.Entry<NodeId, Long> entry : counters) {
+            vector.put(entry.getKey(), entry.getValue());
+        }
+        return VersionVector.of(vector);
+    }
+
+    private static ItemRow mapRow(RowCursor cursor) {
+        return new ItemRow(
+                cursor.getString("id"),
+                cursor.getString("root_id"),
+                cursor.getString("logical_path"),
+                cursor.getString("kind"),
+                cursor.getString("current_version_id"),
+                SqlValues.instant(cursor, "deleted_at"));
+    }
+
+    private record ItemRow(String id, String rootId, String logicalPath, String kind,
+                           String currentVersionId, Instant deletedAt) {
+
+        Item toItem(VersionVector vector) {
+            return new Item(
+                    ItemId.of(id),
+                    SyncRootId.of(rootId),
+                    LogicalPath.of(logicalPath),
+                    ItemKind.valueOf(kind),
+                    currentVersionId == null ? null : VersionId.of(currentVersionId),
+                    vector,
+                    deletedAt);
+        }
+    }
+
+    private static final class ItemAccumulator {
+
+        private final List<Item> items;
+        private String currentPath;
+        private ItemBuilder builder;
+
+        private ItemAccumulator(List<Item> items) {
+            this.items = items;
+        }
+
+        void accept(RowCursor cursor) {
+            String path = cursor.getString("logical_path");
+            if (!path.equals(currentPath)) {
+                finish();
+                builder = new ItemBuilder(mapRow(cursor));
+                currentPath = path;
+            }
+            String node = cursor.getString("vector_node_id");
+            if (node != null && builder != null) {
+                builder.counters.put(NodeId.of(node), cursor.getLong("vector_counter"));
+            }
+        }
+
+        void finish() {
+            if (builder != null) {
+                items.add(builder.build());
+                builder = null;
+                currentPath = null;
+            }
+        }
+    }
+
+    private static final class ItemBuilder {
+
+        private final ItemRow row;
+        private final Map<NodeId, Long> counters = new LinkedHashMap<>();
+
+        private ItemBuilder(ItemRow row) {
+            this.row = row;
+        }
+
+        private Item build() {
+            VersionVector vector = counters.isEmpty() ? VersionVector.empty() : VersionVector.of(counters);
+            return row.toItem(vector);
+        }
+    }
+}

@@ -1,24 +1,17 @@
 package github.gtouming.itemsync.store.metadata.jdbc;
 
 import github.gtouming.itemsync.store.metadata.MetadataException;
+import github.gtouming.itemsync.store.metadata.MetadataMigrations;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.ArrayList;
-import java.util.List;
 
-final class MetadataSchema {
+final class JdbcMetadataSchema {
 
-    private static final List<Migration> MIGRATIONS = List.of(
-            new Migration(1, "db/migrations/001_init.sql"));
-
-    private MetadataSchema() {
+    private JdbcMetadataSchema() {
     }
 
     static void migrate(Connection connection) {
@@ -29,11 +22,8 @@ final class MetadataSchema {
         }
 
         int current = currentVersion(connection);
-        for (Migration migration : MIGRATIONS) {
-            if (migration.version() <= current) {
-                continue;
-            }
-            for (String sql : statements(read(migration.resource()))) {
+        for (MetadataMigrations.Migration migration : MetadataMigrations.after(current)) {
+            for (String sql : migration.statements()) {
                 try (Statement statement = connection.createStatement()) {
                     statement.execute(sql);
                 } catch (SQLException e) {
@@ -65,35 +55,5 @@ final class MetadataSchema {
         } catch (SQLException e) {
             throw new MetadataException("write schema version failed", e);
         }
-    }
-
-    private static String read(String resource) {
-        try (InputStream in = MetadataSchema.class.getClassLoader().getResourceAsStream(resource)) {
-            if (in == null) {
-                throw new IllegalStateException("missing migration resource: " + resource);
-            }
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new MetadataException("read migration resource failed: " + resource, e);
-        }
-    }
-
-    static List<String> statements(String sql) {
-        StringBuilder withoutComments = new StringBuilder();
-        for (String line : sql.split("\n")) {
-            int comment = line.indexOf("--");
-            withoutComments.append(comment >= 0 ? line.substring(0, comment) : line).append('\n');
-        }
-        List<String> statements = new ArrayList<>();
-        for (String part : withoutComments.toString().split(";")) {
-            String trimmed = part.trim();
-            if (!trimmed.isEmpty()) {
-                statements.add(trimmed);
-            }
-        }
-        return List.copyOf(statements);
-    }
-
-    private record Migration(int version, String resource) {
     }
 }
