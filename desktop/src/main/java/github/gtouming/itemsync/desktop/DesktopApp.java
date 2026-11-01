@@ -67,26 +67,25 @@ public final class DesktopApp extends Application {
             return;
         }
         Path configFile = dataDir.resolve(DesktopConfig.FILE_NAME);
+        String password;
         if (!Files.isRegularFile(configFile)) {
-            try {
-                DesktopConfig.writeTemplate(dataDir);
-                showInfo("已生成配置模板：\n" + configFile
-                        + "\n\n请填写 root、group、expect、peers 后重新启动。");
-            } catch (IOException e) {
-                showError("缺少配置文件且无法生成模板: " + e.getMessage());
+            DesktopSetupDialog.Result setup = DesktopSetupDialog.show(dataDir);
+            if (setup == null) {
+                Platform.exit();
+                return;
             }
-            Platform.exit();
-            return;
+            password = setup.password();
+        } else {
+            password = password(dataDir);
+            if (password == null) {
+                Platform.exit();
+                return;
+            }
         }
         try {
             config = DesktopConfig.load(dataDir);
         } catch (Exception e) {
             showError("读取配置失败: " + e.getMessage());
-            Platform.exit();
-            return;
-        }
-        String password = password(dataDir);
-        if (password == null) {
             Platform.exit();
             return;
         }
@@ -317,14 +316,14 @@ public final class DesktopApp extends Application {
         boolean firstRun = !Files.isRegularFile(dataDir.resolve("identity.p12"));
         Dialog<String> dialog = new Dialog<>();
         dialog.setTitle("ItemSync");
-        dialog.setHeaderText(firstRun ? "设置本机身份密钥口令（首次运行）" : "输入本机身份密钥口令");
+        dialog.setHeaderText(firstRun ? "设置本机密钥库口令（首次运行）" : "输入本机密钥库口令");
 
         PasswordField field = new PasswordField();
         Label hint = new Label(firstRun
                 ? "将创建本机身份证书与私钥，并用该口令加密保存在 identity.p12。\n"
-                + "它不是账号密码，不会通过网络传输；请牢记，忘记后只能重新初始化并重新配对。"
+                + "密钥库口令不是账号密码，不会通过网络传输；请牢记，忘记后只能重新初始化并重新配对。"
                 : "用于解锁 identity.p12 中的本机证书与私钥。\n"
-                + "它不是账号密码，不会通过网络传输。");
+                + "密钥库口令不是账号密码，不会通过网络传输。");
         hint.setWrapText(true);
         hint.setMaxWidth(380);
         VBox content = new VBox(10, field, hint);
@@ -342,13 +341,6 @@ public final class DesktopApp extends Application {
 
     private void showError(String message) {
         Alert alert = new Alert(Alert.AlertType.ERROR, message, ButtonType.OK);
-        alert.setTitle("ItemSync");
-        alert.setHeaderText(null);
-        alert.showAndWait();
-    }
-
-    private void showInfo(String message) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION, message, ButtonType.OK);
         alert.setTitle("ItemSync");
         alert.setHeaderText(null);
         alert.showAndWait();

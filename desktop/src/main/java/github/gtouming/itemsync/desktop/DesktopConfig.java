@@ -6,42 +6,23 @@ import github.gtouming.itemsync.platform.desktop.PathSupport;
 
 import java.io.IOException;
 import java.io.Reader;
+import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.stream.Collectors;
 
 public record DesktopConfig(Path dataDir, Path root, GroupId group, SyncRootId rootId,
                             int port, String expectedClientFingerprint,
                             List<PeerTarget> peers, String launchCommand, Duration debounce) {
 
     public static final String FILE_NAME = "desktop.properties";
-
-    private static final String TEMPLATE = """
-            # ItemSync 桌面配置
-            # 同步根目录（支持 ~ 与正斜杠）
-            # 不能与数据目录相同或位于其内；建议放在数据目录之外的独立目录
-            root=~/ItemSyncRoot
-            # 组 ID：8 位 [0-9a-z]
-            group=group001
-            # 同步根 ID：两端必须一致
-            root-id=root-1
-            # 监听端口
-            port=47800
-            # 对端证书指纹（用于双向认证），对端启动后从界面或 itemsync-cli fingerprint 获取
-            # 留空则暂不接受邻居连接
-            expect=
-            # 对端列表，多个用逗号分隔: host:port:fingerprint
-            peers=
-            # 开机自启命令（打包后的 exe 路径），留空则禁用
-            launch-command=
-            # 条件触发防抖秒数
-            debounce-seconds=30
-            """;
 
     public DesktopConfig {
         Objects.requireNonNull(dataDir, "dataDir");
@@ -84,12 +65,51 @@ public record DesktopConfig(Path dataDir, Path root, GroupId group, SyncRootId r
                 peers, launchCommand, Duration.ofSeconds(debounceSeconds));
     }
 
-    public static Path writeTemplate(Path dataDir) throws IOException {
-        Path file = dataDir.resolve(FILE_NAME);
-        if (!Files.exists(file)) {
-            Files.writeString(file, TEMPLATE, StandardCharsets.UTF_8);
+    public static DesktopConfig create(Path dataDir, Path root, GroupId group, SyncRootId rootId,
+                                       int port, String expectedClientFingerprint,
+                                       List<PeerTarget> peers, String launchCommand,
+                                       Duration debounce) throws IOException {
+        Objects.requireNonNull(dataDir, "dataDir");
+        Objects.requireNonNull(root, "root");
+        Objects.requireNonNull(group, "group");
+        Objects.requireNonNull(rootId, "rootId");
+        Objects.requireNonNull(expectedClientFingerprint, "expectedClientFingerprint");
+        Objects.requireNonNull(peers, "peers");
+        Objects.requireNonNull(debounce, "debounce");
+        if (port <= 0 || port > 65535) {
+            throw new IllegalArgumentException("port out of range: " + port);
         }
-        return file;
+        if (debounce.isNegative()) {
+            throw new IllegalArgumentException("debounce must not be negative");
+        }
+        Path normalizedRoot = root.toAbsolutePath().normalize();
+        PathSupport.requireDataDirOutsideRoot(dataDir, normalizedRoot);
+
+        Properties properties = new Properties();
+        properties.setProperty("root", normalizedRoot.toString());
+        properties.setProperty("group", group.value());
+        properties.setProperty("root-id", rootId.value());
+        properties.setProperty("port", Integer.toString(port));
+        properties.setProperty("expect", expectedClientFingerprint.isBlank()
+                ? "none" : expectedClientFingerprint.trim());
+        properties.setProperty("peers", peers.stream().map(PeerTarget::format)
+                .collect(Collectors.joining(",")));
+        properties.setProperty("launch-command", launchCommand == null ? "" : launchCommand.trim());
+        properties.setProperty("debounce-seconds", Long.toString(debounce.toSeconds()));
+
+        Files.createDirectories(dataDir);
+        Path file = dataDir.resolve(FILE_NAME);
+        Path tmp = Files.createTempFile(dataDir, ".desktop", ".tmp");
+        try {
+            try (Writer writer = Files.newBufferedWriter(tmp, StandardCharsets.UTF_8)) {
+                properties.store(writer, "ItemSync desktop configuration");
+            }
+            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } finally {
+            Files.deleteIfExists(tmp);
+        }
+        return load(dataDir);
     }
 
     public record PeerTarget(String host, int port, String fingerprint) {
@@ -105,9 +125,13 @@ public record DesktopConfig(Path dataDir, Path root, GroupId group, SyncRootId r
             String fingerprint = value.substring(fingerprintSeparator + 1);
             return new PeerTarget(host, port, fingerprint);
         }
+
+        public String format() {
+            return host + ":" + port + ":" + fingerprint;
+        }
     }
 
-    private static List<PeerTarget> parsePeers(String raw) {
+    static List<PeerTarget> parsePeers(String raw) {
         List<PeerTarget> peers = new ArrayList<>();
         if (raw == null || raw.isBlank()) {
             return List.of();

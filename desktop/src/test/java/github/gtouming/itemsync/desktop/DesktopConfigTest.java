@@ -1,16 +1,19 @@
 package github.gtouming.itemsync.desktop;
 
+import github.gtouming.itemsync.domain.identity.GroupId;
+import github.gtouming.itemsync.domain.identity.SyncRootId;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.Writer;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
+import java.util.List;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DesktopConfigTest {
 
@@ -60,11 +63,28 @@ class DesktopConfigTest {
     }
 
     @Test
-    void writesTemplateWhenMissing() throws Exception {
-        Path file = DesktopConfig.writeTemplate(temp);
+    void createsAndReloadsConfiguration() throws Exception {
+        Path root = temp.resolve("root");
+        DesktopConfig config = DesktopConfig.create(temp, root, GroupId.random(),
+                SyncRootId.of("root-1"), 47900, "peer-fp",
+                List.of(DesktopConfig.PeerTarget.parse("127.0.0.1:47801:peer-fp")),
+                "", Duration.ofSeconds(10));
 
-        assertTrue(Files.isRegularFile(file));
-        assertTrue(Files.readString(file).contains("root="));
+        assertEquals(root.toAbsolutePath(), config.root());
+        assertEquals(47900, config.port());
+        assertEquals("peer-fp", config.expectedClientFingerprint());
+        assertEquals(1, config.peers().size());
+        assertEquals("127.0.0.1", config.peers().get(0).host());
+        assertEquals(47801, config.peers().get(0).port());
+        assertEquals("peer-fp", config.peers().get(0).fingerprint());
+        assertEquals(10, config.debounce().toSeconds());
+    }
+
+    @Test
+    void createRejectsDataDirectoryInsideRoot() {
+        assertThrows(IllegalArgumentException.class, () -> DesktopConfig.create(temp, temp,
+                GroupId.random(), SyncRootId.of("root-1"), 47800, "none", List.of(), "",
+                Duration.ofSeconds(30)));
     }
 
     @Test
