@@ -2,7 +2,10 @@ package github.gtouming.itemsync.desktop;
 
 import github.gtouming.itemsync.domain.identity.ConflictId;
 import github.gtouming.itemsync.domain.identity.DeviceId;
+import github.gtouming.itemsync.domain.identity.ItemId;
 import github.gtouming.itemsync.domain.identity.NodeId;
+import github.gtouming.itemsync.domain.identity.VersionId;
+import github.gtouming.itemsync.domain.model.FileVersion;
 import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.Trigger;
 import github.gtouming.itemsync.platform.desktop.NioDirectoryWatcher;
@@ -15,6 +18,7 @@ import github.gtouming.itemsync.sync.apply.PhysicalPathResolver;
 import github.gtouming.itemsync.sync.engine.SyncRunResult;
 import github.gtouming.itemsync.sync.engine.node.SyncNode;
 import github.gtouming.itemsync.sync.state.ConflictResolver;
+import github.gtouming.itemsync.sync.state.VersionHistoryService;
 import github.gtouming.itemsync.sync.trigger.TriggerConfig;
 import github.gtouming.itemsync.sync.trigger.TriggerConfigCodec;
 import github.gtouming.itemsync.sync.trigger.TriggerEngine;
@@ -41,17 +45,20 @@ public final class DesktopService implements AutoCloseable {
     private final SyncNode node;
     private final TriggerEngine triggerEngine;
     private final ConflictResolver conflictResolver;
+    private final VersionHistoryService history;
     private final List<AutoCloseable> watchers;
 
     private DesktopService(DesktopConfig config, TlsIdentity identity, JdbcMetadataStore store,
                            SyncNode node, TriggerEngine triggerEngine,
-                           ConflictResolver conflictResolver, List<AutoCloseable> watchers) {
+                           ConflictResolver conflictResolver, VersionHistoryService history,
+                           List<AutoCloseable> watchers) {
         this.config = config;
         this.identity = identity;
         this.store = store;
         this.node = node;
         this.triggerEngine = triggerEngine;
         this.conflictResolver = conflictResolver;
+        this.history = history;
         this.watchers = watchers;
     }
 
@@ -83,6 +90,8 @@ public final class DesktopService implements AutoCloseable {
 
         ConflictResolver conflictResolver = new ConflictResolver(config.root(), store, physical,
                 config.rootId(), nodeId, Instant::now);
+        VersionHistoryService history = new VersionHistoryService(config.root(), store, blobs,
+                physical, config.rootId(), nodeId, Instant::now);
 
         TriggerEngine engine = new TriggerEngine(store, config.group(), config.rootId(), nodeId,
                 node::syncNow, node::runSerialized, Instant::now, config.debounce());
@@ -113,7 +122,7 @@ public final class DesktopService implements AutoCloseable {
         }
 
         return new DesktopService(config, identity, store, node, engine, conflictResolver,
-                List.copyOf(watchers));
+                history, List.copyOf(watchers));
     }
 
     public List<SyncRunResult> syncNow() throws IOException {
@@ -130,6 +139,29 @@ public final class DesktopService implements AutoCloseable {
             node.readSerialized(() -> {
                 try {
                     conflictResolver.resolve(id, resolution);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                return null;
+            });
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
+        }
+    }
+
+    public List<VersionHistoryService.ItemView> historyItems() {
+        return node.readSerialized(() -> history.items(200));
+    }
+
+    public List<FileVersion> versions(ItemId itemId) {
+        return node.readSerialized(() -> history.versions(itemId));
+    }
+
+    public void restoreVersion(ItemId itemId, VersionId versionId) throws IOException {
+        try {
+            node.readSerialized(() -> {
+                try {
+                    history.restore(itemId, versionId);
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }

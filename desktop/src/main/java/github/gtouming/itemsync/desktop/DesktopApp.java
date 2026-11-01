@@ -4,6 +4,7 @@ import github.gtouming.itemsync.domain.model.FileVersion;
 import github.gtouming.itemsync.platform.desktop.PathSupport;
 import github.gtouming.itemsync.platform.desktop.WindowsAutostart;
 import github.gtouming.itemsync.sync.state.ConflictResolver;
+import github.gtouming.itemsync.sync.state.VersionHistoryService;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
@@ -68,6 +69,7 @@ public final class DesktopApp extends Application {
     private final Label errorLabel = new Label();
     private Button syncButton;
     private Button conflictsButton;
+    private Button historyButton;
 
     @Override
     public void start(Stage stage) {
@@ -115,6 +117,7 @@ public final class DesktopApp extends Application {
 
         syncButton = new Button("立即同步");
         conflictsButton = new Button("处理冲突");
+        historyButton = new Button("版本历史");
         Button refreshButton = new Button("刷新");
         Button openDataButton = new Button("打开数据目录");
         Button hideButton = new Button("隐藏到托盘");
@@ -140,12 +143,12 @@ public final class DesktopApp extends Application {
         errorLabel.setStyle("-fx-text-fill: #b00020;");
         errorLabel.setWrapText(true);
 
-        HBox buttons = new HBox(8, syncButton, conflictsButton, refreshButton, openDataButton,
-                hideButton, exitButton);
+        HBox buttons = new HBox(8, syncButton, conflictsButton, historyButton, refreshButton,
+                openDataButton, hideButton, exitButton);
         VBox root = new VBox(16, grid, conflictLabel, errorLabel, buttons, autostart);
         root.setPadding(new Insets(20));
 
-        stage.setScene(new Scene(root, 660, 430));
+        stage.setScene(new Scene(root, 820, 460));
         stage.setTitle("ItemSync");
         stage.setOnCloseRequest(event -> {
             if (!exiting) {
@@ -157,6 +160,7 @@ public final class DesktopApp extends Application {
 
         syncButton.setOnAction(event -> syncAsync());
         conflictsButton.setOnAction(event -> showConflictsAsync());
+        historyButton.setOnAction(event -> showHistoryAsync());
         refreshButton.setOnAction(event -> refreshAsync());
         openDataButton.setOnAction(event -> openData());
         hideButton.setOnAction(event -> stage.hide());
@@ -368,6 +372,150 @@ public final class DesktopApp extends Application {
         String hash = version.blobHash().value();
         return hash.substring(0, Math.min(8, hash.length())) + "  "
                 + version.size() + " B  " + version.mtime();
+    }
+
+    private void showHistoryAsync() {
+        if (historyButton != null) {
+            historyButton.setDisable(true);
+        }
+        worker.submit(() -> {
+            try {
+                List<VersionHistoryService.ItemView> items = service.historyItems();
+                Platform.runLater(() -> {
+                    if (historyButton != null) {
+                        historyButton.setDisable(false);
+                    }
+                    showHistory(items);
+                });
+            } catch (Exception e) {
+                Platform.runLater(() -> {
+                    if (historyButton != null) {
+                        historyButton.setDisable(false);
+                    }
+                    showError("读取版本历史失败: " + e.getMessage());
+                });
+            }
+        });
+    }
+
+    private void showHistory(List<VersionHistoryService.ItemView> items) {
+        if (items.isEmpty()) {
+            showInfo("同步根中没有已记录的文件版本");
+            return;
+        }
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("ItemSync");
+        dialog.setHeaderText("版本历史");
+
+        ListView<VersionHistoryService.ItemView> files = new ListView<>();
+        files.getItems().setAll(items);
+        files.setPrefWidth(320);
+        files.setPrefHeight(320);
+        files.setCellFactory(view -> new ListCell<>() {
+            @Override
+            protected void updateItem(VersionHistoryService.ItemView item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty || item == null ? null : item.path().value());
+            }
+        });
+
+        ListView<FileVersion> versions = new ListView<>();
+        versions.setPrefWidth(460);
+        versions.setPrefHeight(320);
+        versions.setCellFactory(view -> new ListCell<>() {
+            @Override
+            protected void updateItem(FileVersion version, boolean empty) {
+                super.updateItem(version, empty);
+                if (empty || version == null) {
+                    setText(null);
+                    return;
+                }
+                setWrapText(true);
+                setText(versionSummary(version));
+            }
+        });
+
+        Label hint = new Label("恢复某个版本会用该版本内容覆盖当前文件，并记录为一个新版本。");
+        hint.setWrapText(true);
+
+        ButtonType restore = new ButtonType("恢复此版本", ButtonBar.ButtonData.OK_DONE);
+        ButtonType close = new ButtonType("关闭", ButtonBar.ButtonData.CANCEL_CLOSE);
+        dialog.getDialogPane().getButtonTypes().addAll(restore, close);
+
+        HBox lists = new HBox(10,
+                new VBox(4, new Label("文件"), files),
+                new VBox(4, new Label("版本"), versions));
+        VBox content = new VBox(10, lists, hint);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().setPrefWidth(840);
+
+        Button restoreButton = (Button) dialog.getDialogPane().lookupButton(restore);
+        restoreButton.setDisable(true);
+        long[] request = {0};
+        files.getSelectionModel().selectedItemProperty().addListener((observable, oldItem, item) -> {
+            versions.getItems().clear();
+            restoreButton.setDisable(true);
+            if (item == null) {
+                return;
+            }
+            long current = ++request[0];
+            worker.submit(() -> {
+                try {
+                    List<FileVersion> loaded = service.versions(item.id());
+                    Platform.runLater(() -> {
+                        if (request[0] == current
+                                && files.getSelectionModel().getSelectedItem() == item) {
+                            versions.getItems().setAll(loaded);
+                            if (!loaded.isEmpty()) {
+                                versions.getSelectionModel().selectFirst();
+                            }
+                        }
+                    });
+                } catch (Exception e) {
+                    Platform.runLater(() -> showError("读取版本失败: " + e.getMessage()));
+                }
+            });
+        });
+        versions.getSelectionModel().selectedItemProperty().addListener(
+                (observable, oldVersion, version) -> restoreButton.setDisable(version == null));
+        files.getSelectionModel().selectFirst();
+
+        restoreButton.addEventFilter(ActionEvent.ACTION, event -> {
+            event.consume();
+            VersionHistoryService.ItemView item = files.getSelectionModel().getSelectedItem();
+            FileVersion version = versions.getSelectionModel().getSelectedItem();
+            if (item == null || version == null) {
+                return;
+            }
+            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                    "用 " + version.mtime() + " 的版本覆盖当前文件？",
+                    ButtonType.OK, ButtonType.CANCEL);
+            if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+                return;
+            }
+            worker.submit(() -> {
+                try {
+                    service.restoreVersion(item.id(), version.id());
+                    Platform.runLater(() -> {
+                        dialog.close();
+                        refreshAsync();
+                    });
+                } catch (Exception e) {
+                    Platform.runLater(() -> showError("恢复版本失败: " + e.getMessage()));
+                }
+            });
+        });
+
+        dialog.showAndWait();
+    }
+
+    private static String versionSummary(FileVersion version) {
+        String hash = version.blobHash().value();
+        return version.mtime() + "  " + version.size() + " B\n"
+                + hash.substring(0, Math.min(8, hash.length())) + "  "
+                + version.sourceNodeId().value()
+                + "  创建于 " + version.createdAt();
     }
 
     private void configureAutostart(CheckBox checkBox) {
