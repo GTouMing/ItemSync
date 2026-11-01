@@ -1,21 +1,34 @@
 package github.gtouming.itemsync.platform.desktop;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class WindowsAutostartTest {
 
-    @Test
-    void buildsEnableCommand() {
-        List<String> command = WindowsAutostart.enableCommand("C:\\Apps\\ItemSync.exe");
+    @TempDir
+    Path temp;
 
-        assertEquals(List.of(
-                "reg", "add", "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                "/v", "ItemSync", "/t", "REG_SZ", "/d", "C:\\Apps\\ItemSync.exe", "/f"),
-                command);
+    @Test
+    void writesImportableRegistryFile() throws Exception {
+        Path file = temp.resolve("autostart.reg");
+        String launch = "\"C:\\Program Files\\ItemSync\\ItemSync.exe\" --data \"C:\\My Data\"";
+        WindowsAutostart.writeRegFile(file, launch);
+
+        byte[] bytes = Files.readAllBytes(file);
+        assertEquals((byte) 0xFF, bytes[0]);
+        assertEquals((byte) 0xFE, bytes[1]);
+        String content = new String(bytes, 2, bytes.length - 2, StandardCharsets.UTF_16LE);
+        String escaped = launch.replace("\\", "\\\\").replace("\"", "\\\"");
+        assertTrue(content.contains("[HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run]"));
+        assertTrue(content.contains("\"ItemSync\"=\"" + escaped + "\""));
     }
 
     @Test

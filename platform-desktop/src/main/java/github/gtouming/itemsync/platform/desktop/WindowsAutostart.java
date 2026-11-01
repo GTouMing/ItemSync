@@ -1,7 +1,10 @@
 package github.gtouming.itemsync.platform.desktop;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
@@ -21,7 +24,7 @@ public final class WindowsAutostart {
 
     public static boolean isEnabled() throws IOException {
         Process process = new ProcessBuilder(queryCommand()).redirectErrorStream(true).start();
-        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String output = new String(process.getInputStream().readAllBytes(), Charset.defaultCharset());
         int exitCode = waitFor(process);
         return exitCode == 0 && output.contains(VALUE_NAME);
     }
@@ -31,16 +34,30 @@ public final class WindowsAutostart {
         if (launchCommand.isBlank()) {
             throw new IllegalArgumentException("launch command must not be blank");
         }
-        run(enableCommand(launchCommand));
+        Path file = Files.createTempFile("itemsync-autostart", ".reg");
+        try {
+            writeRegFile(file, launchCommand);
+            run(List.of("reg", "import", file.toString()));
+        } finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    static void writeRegFile(Path file, String launchCommand) throws IOException {
+        String escaped = launchCommand.replace("\\", "\\\\").replace("\"", "\\\"");
+        String content = "Windows Registry Editor Version 5.00\r\n\r\n"
+                + "[" + RUN_KEY + "]\r\n"
+                + "\"" + VALUE_NAME + "\"=\"" + escaped + "\"\r\n";
+        byte[] body = content.getBytes(StandardCharsets.UTF_16LE);
+        byte[] data = new byte[body.length + 2];
+        data[0] = (byte) 0xFF;
+        data[1] = (byte) 0xFE;
+        System.arraycopy(body, 0, data, 2, body.length);
+        Files.write(file, data);
     }
 
     public static void disable() throws IOException {
         run(disableCommand());
-    }
-
-    static List<String> enableCommand(String launchCommand) {
-        return List.of("reg", "add", RUN_KEY, "/v", VALUE_NAME, "/t", "REG_SZ",
-                "/d", launchCommand, "/f");
     }
 
     static List<String> disableCommand() {
@@ -53,10 +70,11 @@ public final class WindowsAutostart {
 
     private static void run(List<String> command) throws IOException {
         Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
-        process.getInputStream().readAllBytes();
+        String output = new String(process.getInputStream().readAllBytes(), Charset.defaultCharset());
         int exitCode = waitFor(process);
         if (exitCode != 0) {
-            throw new IOException("autostart command failed with exit code " + exitCode);
+            throw new IOException("autostart command failed with exit code " + exitCode
+                    + (output.isBlank() ? "" : ": " + output.trim()));
         }
     }
 
