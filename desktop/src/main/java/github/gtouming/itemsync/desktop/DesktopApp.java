@@ -23,6 +23,7 @@ import javafx.stage.Stage;
 import java.awt.AWTException;
 import java.awt.Color;
 import java.awt.Desktop;
+import java.awt.Font;
 import java.awt.Graphics2D;
 import java.awt.MenuItem;
 import java.awt.PopupMenu;
@@ -255,9 +256,14 @@ public final class DesktopApp extends Application {
         trayIcon = new TrayIcon(image, "ItemSync");
         trayIcon.setImageAutoSize(true);
         PopupMenu menu = new PopupMenu();
+        Font menuFont = trayFont();
+        menu.setFont(menuFont);
         MenuItem open = new MenuItem("打开");
         MenuItem sync = new MenuItem("立即同步");
         MenuItem exit = new MenuItem("退出");
+        open.setFont(menuFont);
+        sync.setFont(menuFont);
+        exit.setFont(menuFont);
         open.addActionListener(event -> Platform.runLater(stage::show));
         sync.addActionListener(event -> Platform.runLater(this::syncAsync));
         exit.addActionListener(event -> Platform.runLater(() -> exit(stage)));
@@ -272,6 +278,17 @@ public final class DesktopApp extends Application {
         } catch (AWTException e) {
             trayIcon = null;
         }
+    }
+
+    private static Font trayFont() {
+        String[] candidates = {"Microsoft YaHei UI", "Microsoft YaHei", "SimSun", "Noto Sans CJK SC"};
+        for (String name : candidates) {
+            Font font = new Font(name, Font.PLAIN, 12);
+            if (font.canDisplay('中')) {
+                return font;
+            }
+        }
+        return new Font(Font.DIALOG, Font.PLAIN, 12);
     }
 
     private void openData() {
