@@ -62,7 +62,7 @@ public final class DesktopApp extends Application {
         Platform.setImplicitExit(false);
         Path dataDir = parseDataDir(getParameters().getRaw());
         if (dataDir == null) {
-            showError("用法: ItemSync --data <目录>");
+            showError("无法创建数据目录");
             Platform.exit();
             return;
         }
@@ -358,7 +358,17 @@ public final class DesktopApp extends Application {
                 return data;
             }
         }
-        return null;
+        String localAppData = System.getenv("LOCALAPPDATA");
+        Path base = localAppData == null || localAppData.isBlank()
+                ? Path.of(System.getProperty("user.home"))
+                : Path.of(localAppData);
+        Path data = base.resolve("ItemSync").toAbsolutePath();
+        try {
+            Files.createDirectories(data);
+        } catch (IOException e) {
+            return null;
+        }
+        return data;
     }
 
     private static Thread daemon(Runnable runnable, String name) {
