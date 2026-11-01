@@ -1,9 +1,12 @@
 package github.gtouming.itemsync.desktop;
 
+import github.gtouming.itemsync.domain.model.FileVersion;
 import github.gtouming.itemsync.platform.desktop.PathSupport;
 import github.gtouming.itemsync.platform.desktop.WindowsAutostart;
+import github.gtouming.itemsync.sync.state.ConflictResolver;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
 import javafx.scene.control.Alert;
@@ -13,6 +16,8 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
+import javafx.scene.control.ListView;
 import javafx.scene.control.PasswordField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.GridPane;
@@ -62,6 +67,7 @@ public final class DesktopApp extends Application {
     private final Label conflictLabel = new Label();
     private final Label errorLabel = new Label();
     private Button syncButton;
+    private Button conflictsButton;
 
     @Override
     public void start(Stage stage) {
@@ -108,6 +114,7 @@ public final class DesktopApp extends Application {
                 runnable -> daemon(runnable, "itemsync-desktop-status"));
 
         syncButton = new Button("立即同步");
+        conflictsButton = new Button("处理冲突");
         Button refreshButton = new Button("刷新");
         Button openDataButton = new Button("打开数据目录");
         Button hideButton = new Button("隐藏到托盘");
@@ -133,7 +140,8 @@ public final class DesktopApp extends Application {
         errorLabel.setStyle("-fx-text-fill: #b00020;");
         errorLabel.setWrapText(true);
 
-        HBox buttons = new HBox(8, syncButton, refreshButton, openDataButton, hideButton, exitButton);
+        HBox buttons = new HBox(8, syncButton, conflictsButton, refreshButton, openDataButton,
+                hideButton, exitButton);
         VBox root = new VBox(16, grid, conflictLabel, errorLabel, buttons, autostart);
         root.setPadding(new Insets(20));
 
@@ -148,6 +156,7 @@ public final class DesktopApp extends Application {
         stage.show();
 
         syncButton.setOnAction(event -> syncAsync());
+        conflictsButton.setOnAction(event -> showConflictsAsync());
         refreshButton.setOnAction(event -> refreshAsync());
         openDataButton.setOnAction(event -> openData());
         hideButton.setOnAction(event -> stage.hide());
@@ -209,9 +218,156 @@ public final class DesktopApp extends Application {
             lastRunLabel.setText(status.lastRun().state() + "  " + status.lastRun().statsJson());
         }
         conflictLabel.setText("未解决冲突: " + status.openConflicts());
+        if (conflictsButton != null) {
+            conflictsButton.setText(status.openConflicts() == 0
+                    ? "处理冲突"
+                    : "处理冲突 (" + status.openConflicts() + ")");
+        }
         errorLabel.setText(status.lastError() == null
                 ? ""
                 : "最近错误: " + status.lastError().getMessage());
+    }
+
+    private void showConflictsAsync() {
+        if (conflictsButton != null) {
+            conflictsButton.setDisable(true);
+        }
+        worker.submit(() -> {
+            try {
+                List<ConflictResolver.ConflictView> views = service.openConflicts();
+                Platform.runLater(() -> {
+                    if (conflictsButton != null) {
+                        conflictsButton.setDisable(false);
+                    }
+                    showConflicts(views);
+                });
+            } catch (Exception e) {
+                Platform.runLater(() -> {
+                    if (conflictsButton != null) {
+                        conflictsButton.setDisable(false);
+                    }
+                    showError("读取冲突失败: " + e.getMessage());
+                });
+            }
+        });
+    }
+
+    private void showConflicts(List<ConflictResolver.ConflictView> views) {
+        if (views.isEmpty()) {
+            showInfo("没有未解决的冲突");
+            return;
+        }
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("ItemSync");
+        dialog.setHeaderText("未解决冲突（" + views.size() + "）");
+
+        ListView<ConflictResolver.ConflictView> list = new ListView<>();
+        list.getItems().setAll(views);
+        list.setPrefHeight(280);
+        list.setCellFactory(view -> new ListCell<>() {
+            @Override
+            protected void updateItem(ConflictResolver.ConflictView item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    return;
+                }
+                String localText;
+                if (item.local() == null) {
+                    localText = "本地已删除";
+                } else if (item.copyPath() == null) {
+                    localText = "无副本（本地文件在同步根原路径）";
+                } else {
+                    localText = item.copyPath().value();
+                }
+                setWrapText(true);
+                setText(item.path().value()
+                        + "\n本地副本: " + localText
+                        + "\n远端版本: " + conflictSummary(item.remote())
+                        + "\n冲突前本地版本: " + conflictSummary(item.local()));
+            }
+        });
+        list.getSelectionModel().selectFirst();
+
+        Label hint = new Label("恢复本地会把本地副本写回原路径；接受远端保留当前远端内容；"
+                + "保留两者只标记冲突已解决，副本会保留。");
+        hint.setWrapText(true);
+
+        ButtonType keepRemote = new ButtonType("接受远端", ButtonBar.ButtonData.OK_DONE);
+        ButtonType keepLocal = new ButtonType("恢复本地", ButtonBar.ButtonData.OTHER);
+        ButtonType keepBoth = new ButtonType("保留两者", ButtonBar.ButtonData.OTHER);
+        ButtonType close = new ButtonType("关闭", ButtonBar.ButtonData.CANCEL_CLOSE);
+        dialog.getDialogPane().getButtonTypes().addAll(keepRemote, keepLocal, keepBoth, close);
+
+        VBox content = new VBox(10, list, hint);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().setPrefWidth(760);
+
+        Button remoteButton = (Button) dialog.getDialogPane().lookupButton(keepRemote);
+        Button localButton = (Button) dialog.getDialogPane().lookupButton(keepLocal);
+        Button bothButton = (Button) dialog.getDialogPane().lookupButton(keepBoth);
+        Runnable updateButtons = () -> {
+            ConflictResolver.ConflictView selected = list.getSelectionModel().getSelectedItem();
+            remoteButton.setDisable(selected == null);
+            localButton.setDisable(selected == null || selected.local() == null);
+            bothButton.setDisable(selected == null || selected.copyPath() == null);
+        };
+        list.getSelectionModel().selectedItemProperty().addListener(
+                (observable, oldValue, newValue) -> updateButtons.run());
+        updateButtons.run();
+
+        remoteButton.addEventFilter(ActionEvent.ACTION, event -> {
+            event.consume();
+            resolveSelected(dialog, list, ConflictResolver.Resolution.KEEP_REMOTE);
+        });
+        localButton.addEventFilter(ActionEvent.ACTION, event -> {
+            event.consume();
+            resolveSelected(dialog, list, ConflictResolver.Resolution.KEEP_LOCAL);
+        });
+        bothButton.addEventFilter(ActionEvent.ACTION, event -> {
+            event.consume();
+            resolveSelected(dialog, list, ConflictResolver.Resolution.KEEP_BOTH);
+        });
+
+        dialog.showAndWait();
+    }
+
+    private void resolveSelected(Dialog<Void> dialog,
+                                 ListView<ConflictResolver.ConflictView> list,
+                                 ConflictResolver.Resolution resolution) {
+        ConflictResolver.ConflictView selected = list.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            return;
+        }
+        if (resolution == ConflictResolver.Resolution.KEEP_REMOTE && selected.remote() == null) {
+            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
+                    "远端已删除该文件，接受远端会删除本地文件。继续？",
+                    ButtonType.OK, ButtonType.CANCEL);
+            if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+                return;
+            }
+        }
+        worker.submit(() -> {
+            try {
+                service.resolveConflict(selected.id(), resolution);
+                Platform.runLater(() -> {
+                    dialog.close();
+                    refreshAsync();
+                });
+            } catch (Exception e) {
+                Platform.runLater(() -> showError("处理冲突失败: " + e.getMessage()));
+            }
+        });
+    }
+
+    private static String conflictSummary(FileVersion version) {
+        if (version == null) {
+            return "已删除";
+        }
+        String hash = version.blobHash().value();
+        return hash.substring(0, Math.min(8, hash.length())) + "  "
+                + version.size() + " B  " + version.mtime();
     }
 
     private void configureAutostart(CheckBox checkBox) {
@@ -399,6 +555,13 @@ public final class DesktopApp extends Application {
             return null;
         }
         return result.get();
+    }
+
+    private void showInfo(String message) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION, message, ButtonType.OK);
+        alert.setTitle("ItemSync");
+        alert.setHeaderText(null);
+        alert.showAndWait();
     }
 
     private void showError(String message) {

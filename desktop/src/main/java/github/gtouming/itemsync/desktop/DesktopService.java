@@ -1,23 +1,27 @@
 package github.gtouming.itemsync.desktop;
 
+import github.gtouming.itemsync.domain.identity.ConflictId;
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.NodeId;
 import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.Trigger;
 import github.gtouming.itemsync.platform.desktop.NioDirectoryWatcher;
 import github.gtouming.itemsync.platform.desktop.ProcessWatcher;
+import github.gtouming.itemsync.store.blob.BlobStore;
 import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.store.metadata.jdbc.JdbcMetadataStore;
 import github.gtouming.itemsync.sync.apply.PathResolvers;
 import github.gtouming.itemsync.sync.apply.PhysicalPathResolver;
 import github.gtouming.itemsync.sync.engine.SyncRunResult;
 import github.gtouming.itemsync.sync.engine.node.SyncNode;
+import github.gtouming.itemsync.sync.state.ConflictResolver;
 import github.gtouming.itemsync.sync.trigger.TriggerConfig;
 import github.gtouming.itemsync.sync.trigger.TriggerConfigCodec;
 import github.gtouming.itemsync.sync.trigger.TriggerEngine;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -36,15 +40,18 @@ public final class DesktopService implements AutoCloseable {
     private final JdbcMetadataStore store;
     private final SyncNode node;
     private final TriggerEngine triggerEngine;
+    private final ConflictResolver conflictResolver;
     private final List<AutoCloseable> watchers;
 
     private DesktopService(DesktopConfig config, TlsIdentity identity, JdbcMetadataStore store,
-                           SyncNode node, TriggerEngine triggerEngine, List<AutoCloseable> watchers) {
+                           SyncNode node, TriggerEngine triggerEngine,
+                           ConflictResolver conflictResolver, List<AutoCloseable> watchers) {
         this.config = config;
         this.identity = identity;
         this.store = store;
         this.node = node;
         this.triggerEngine = triggerEngine;
+        this.conflictResolver = conflictResolver;
         this.watchers = watchers;
     }
 
@@ -58,10 +65,12 @@ public final class DesktopService implements AutoCloseable {
         Files.createDirectories(config.root());
 
         JdbcMetadataStore store = openStore(config.dataDir());
+        PhysicalPathResolver physical = resolver();
+        BlobStore blobs = new FileSystemBlobStore(config.dataDir());
         SyncNode node;
         try {
             node = new SyncNode(nodeId, config.group(), config.rootId(), config.root(), store,
-                    new FileSystemBlobStore(config.dataDir()), resolver(), identity, deviceId,
+                    blobs, physical, identity, deviceId,
                     config.expectedClientFingerprint(), config.port(),
                     config.dataDir().resolve("transfer"));
             for (DesktopConfig.PeerTarget peer : config.peers()) {
@@ -71,6 +80,9 @@ public final class DesktopService implements AutoCloseable {
             store.close();
             throw e;
         }
+
+        ConflictResolver conflictResolver = new ConflictResolver(config.root(), store, physical,
+                config.rootId(), nodeId, Instant::now);
 
         TriggerEngine engine = new TriggerEngine(store, config.group(), config.rootId(), nodeId,
                 node::syncNow, node::runSerialized, Instant::now, config.debounce());
@@ -100,11 +112,32 @@ public final class DesktopService implements AutoCloseable {
             throw e;
         }
 
-        return new DesktopService(config, identity, store, node, engine, List.copyOf(watchers));
+        return new DesktopService(config, identity, store, node, engine, conflictResolver,
+                List.copyOf(watchers));
     }
 
     public List<SyncRunResult> syncNow() throws IOException {
         return node.syncNow();
+    }
+
+    public List<ConflictResolver.ConflictView> openConflicts() {
+        return node.readSerialized(() -> conflictResolver.open(200));
+    }
+
+    public void resolveConflict(ConflictId id, ConflictResolver.Resolution resolution)
+            throws IOException {
+        try {
+            node.readSerialized(() -> {
+                try {
+                    conflictResolver.resolve(id, resolution);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                return null;
+            });
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
+        }
     }
 
     public Status status() {
