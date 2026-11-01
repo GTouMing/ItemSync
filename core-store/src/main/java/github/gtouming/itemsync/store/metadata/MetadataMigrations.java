@@ -9,7 +9,8 @@ import java.util.List;
 public final class MetadataMigrations {
 
     private static final List<Migration> MIGRATIONS = List.of(
-            new Migration(1, "db/migrations/001_init.sql"));
+            new Migration(1, "db/migrations/001_init.sql"),
+            new Migration(2, "db/migrations/002_conflict_remote_vector.sql"));
 
     private MetadataMigrations() {
     }

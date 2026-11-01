@@ -231,9 +231,10 @@ public final class MetadataStoreConformance {
 
     public void resolvesConflicts() {
         Conflict first = new Conflict(ConflictId.of("conf-1"), ITEM, VersionId.of("ver-1"),
-                VersionId.of("ver-2"), LogicalPath.of("docs/a (conflict node-a).txt"), T0, null);
+                VersionId.of("ver-2"), VersionVector.of(Map.of(NodeId.of("node-a"), 2L)),
+                LogicalPath.of("docs/a (conflict node-a).txt"), T0, null);
         Conflict second = new Conflict(ConflictId.of("conf-2"), ITEM, VersionId.of("ver-1"),
-                null, null, T0.plusSeconds(1), null);
+                null, VersionVector.empty(), null, T0.plusSeconds(1), null);
 
         store.conflicts().insert(first);
         store.conflicts().insert(second);

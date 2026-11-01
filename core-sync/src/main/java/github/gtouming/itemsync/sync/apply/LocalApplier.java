@@ -104,12 +104,13 @@ public final class LocalApplier {
             return;
         }
         if (remote.deleted()) {
-            recordConflict(local.path(), writer.currentVersionId(local.path()), null, null);
+            recordConflict(local.path(), writer.currentVersionId(local.path()), null,
+                    remote.vector(), null);
             return;
         }
         if (local.deleted()) {
             VersionId remoteVersion = applyRemote(remote, fetcher, sourceNode);
-            recordConflict(remote.path(), null, remoteVersion, null);
+            recordConflict(remote.path(), null, remoteVersion, remote.vector(), null);
             return;
         }
 
@@ -133,7 +134,7 @@ public final class LocalApplier {
         writer.recordFile(copyPath, localHash, copySize, copyMtime, copyVector, localNode);
 
         VersionId remoteVersion = applyRemote(remote, fetcher, sourceNode);
-        recordConflict(local.path(), localVersion, remoteVersion, copyPath);
+        recordConflict(local.path(), localVersion, remoteVersion, remote.vector(), copyPath);
     }
 
     private void applyRemoteDeletion(ManifestEntry remote, NodeId sourceNode) throws IOException {
@@ -145,7 +146,8 @@ public final class LocalApplier {
     }
 
     private void recordConflict(LogicalPath path, VersionId localVersion,
-                                VersionId remoteVersion, LogicalPath copyPath) {
+                                VersionId remoteVersion, VersionVector remoteVector,
+                                LogicalPath copyPath) {
         Optional<ItemId> itemId = store.items().find(rootId, path).map(Item::id);
         if (itemId.isEmpty()) {
             return;
@@ -155,6 +157,7 @@ public final class LocalApplier {
                 itemId.get(),
                 localVersion,
                 remoteVersion,
+                remoteVector,
                 copyPath,
                 clock.get(),
                 null));

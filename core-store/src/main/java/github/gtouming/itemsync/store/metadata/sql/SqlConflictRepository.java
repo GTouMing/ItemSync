@@ -5,6 +5,8 @@ import github.gtouming.itemsync.domain.identity.ItemId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.VersionId;
 import github.gtouming.itemsync.domain.model.Conflict;
+import github.gtouming.itemsync.domain.replication.VersionVector;
+import github.gtouming.itemsync.domain.replication.VersionVectorCodec;
 import github.gtouming.itemsync.store.metadata.MetadataStore.ConflictRepository;
 
 import java.time.Instant;
@@ -14,7 +16,8 @@ import java.util.Optional;
 final class SqlConflictRepository implements ConflictRepository {
 
     private static final String COLUMNS =
-            "id, item_id, local_version_id, remote_version_id, copy_path, detected_at, resolved_at";
+            "id, item_id, local_version_id, remote_version_id, remote_vector, copy_path, "
+                    + "detected_at, resolved_at";
 
     private final SqlSession session;
 
@@ -24,11 +27,12 @@ final class SqlConflictRepository implements ConflictRepository {
 
     @Override
     public void insert(Conflict conflict) {
-        session.update("INSERT OR REPLACE INTO conflict(" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+        session.update("INSERT OR REPLACE INTO conflict(" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 conflict.id().value(),
                 conflict.itemId().value(),
                 conflict.localVersion() == null ? null : conflict.localVersion().value(),
                 conflict.remoteVersion() == null ? null : conflict.remoteVersion().value(),
+                VersionVectorCodec.encode(conflict.remoteVector()),
                 conflict.copyPath() == null ? null : conflict.copyPath().value(),
                 conflict.detectedAt(),
                 conflict.resolvedAt());
@@ -65,11 +69,13 @@ final class SqlConflictRepository implements ConflictRepository {
         String localVersionId = cursor.getString("local_version_id");
         String remoteVersionId = cursor.getString("remote_version_id");
         String copyPath = cursor.getString("copy_path");
+        String remoteVector = cursor.getString("remote_vector");
         return new Conflict(
                 ConflictId.of(cursor.getString("id")),
                 ItemId.of(cursor.getString("item_id")),
                 localVersionId == null ? null : VersionId.of(localVersionId),
                 remoteVersionId == null ? null : VersionId.of(remoteVersionId),
+                remoteVector == null ? VersionVector.empty() : VersionVectorCodec.decode(remoteVector),
                 copyPath == null ? null : LogicalPath.of(copyPath),
                 SqlValues.instant(cursor, "detected_at"),
                 SqlValues.instant(cursor, "resolved_at"));

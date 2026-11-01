@@ -24,9 +24,11 @@ class MetadataMigrationsTest {
 
     @Test
     void exposesPendingMigrations() {
-        assertEquals(1, MetadataMigrations.latestVersion());
-        assertEquals(1, MetadataMigrations.after(0).size());
+        assertEquals(2, MetadataMigrations.latestVersion());
+        assertEquals(2, MetadataMigrations.after(0).size());
         assertEquals(0, MetadataMigrations.after(MetadataMigrations.latestVersion()).size());
-        assertFalse(MetadataMigrations.all().get(0).statements().isEmpty());
+        for (MetadataMigrations.Migration migration : MetadataMigrations.all()) {
+            assertFalse(migration.statements().isEmpty());
+        }
     }
 }
