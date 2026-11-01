@@ -22,6 +22,7 @@ dependencies {
     implementation(project(":core-sync"))
     implementation(project(":core-store"))
     implementation(project(":core-transport"))
+    implementation(project(":platform-desktop"))
     runtimeOnly(libs.sqlite.jdbc)
 
     testImplementation(libs.junit.jupiter)

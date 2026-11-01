@@ -8,6 +8,9 @@ import github.gtouming.itemsync.domain.identity.TriggerId;
 import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.Trigger;
 import github.gtouming.itemsync.domain.model.TriggerType;
+import github.gtouming.itemsync.platform.desktop.NioDirectoryWatcher;
+import github.gtouming.itemsync.platform.desktop.PathSupport;
+import github.gtouming.itemsync.platform.desktop.ProcessWatcher;
 import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.store.metadata.jdbc.JdbcMetadataStore;
 import github.gtouming.itemsync.sync.apply.PathResolvers;
@@ -95,8 +98,9 @@ public final class ItemSyncCli {
         DeviceId deviceId = DeviceId.of(readText(data.resolve("device-id"), "device id"));
         GroupId group = GroupId.parse(arguments.required("group"));
         SyncRootId rootId = SyncRootId.of(arguments.optional("root-id", "root-1"));
-        Path root = Path.of(arguments.required("root")).toAbsolutePath();
+        Path root = PathSupport.expandUser(arguments.required("root")).toAbsolutePath();
         Files.createDirectories(root);
+        PathSupport.requireDataDirOutsideRoot(data, root);
         int port = port(arguments.optional("port", "47800"));
         int intervalSeconds = Integer.parseInt(arguments.optional("interval", "0"));
         int debounceSeconds = Integer.parseInt(arguments.optional("debounce", "30"));
@@ -181,8 +185,9 @@ public final class ItemSyncCli {
         DeviceId deviceId = DeviceId.of(readText(data.resolve("device-id"), "device id"));
         GroupId group = GroupId.parse(arguments.required("group"));
         SyncRootId rootId = SyncRootId.of(arguments.optional("root-id", "root-1"));
-        Path root = Path.of(arguments.required("root")).toAbsolutePath();
+        Path root = PathSupport.expandUser(arguments.required("root")).toAbsolutePath();
         Files.createDirectories(root);
+        PathSupport.requireDataDirOutsideRoot(data, root);
         PeerAddress peer = PeerAddress.parse(arguments.required("peer"));
         int waitSeconds = Integer.parseInt(arguments.optional("wait", "3"));
 
@@ -313,12 +318,13 @@ public final class ItemSyncCli {
                   trigger-remove --data <dir> --id <trigger-id>
                   run-list      --data <dir> [--root-id root-1]
 
-                The keystore password can also be supplied via ITEMS_SYNC_PASSWORD.
+                The --password value protects the local identity keystore (identity.p12),
+                not an account. It can also be supplied via ITEMS_SYNC_PASSWORD.
                 """);
     }
 
     private static Path dataDirectory(CliArguments arguments) throws IOException {
-        Path data = Path.of(arguments.required("data")).toAbsolutePath();
+        Path data = PathSupport.expandUser(arguments.required("data")).toAbsolutePath();
         Files.createDirectories(data);
         return data;
     }

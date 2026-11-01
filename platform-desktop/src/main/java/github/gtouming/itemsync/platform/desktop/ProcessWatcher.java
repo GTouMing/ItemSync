@@ -1,4 +1,4 @@
-package github.gtouming.itemsync.cli;
+package github.gtouming.itemsync.platform.desktop;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-final class ProcessWatcher implements AutoCloseable {
+public final class ProcessWatcher implements AutoCloseable {
 
     private final Set<String> executables;
     private final Consumer<String> onStarted;
@@ -24,8 +24,8 @@ final class ProcessWatcher implements AutoCloseable {
 
     private Set<String> running;
 
-    ProcessWatcher(Set<String> executables, Consumer<String> onStarted, Consumer<String> onStopped,
-                   Duration interval) {
+    public ProcessWatcher(Set<String> executables, Consumer<String> onStarted, Consumer<String> onStopped,
+                          Duration interval) {
         this.executables = Objects.requireNonNull(executables, "executables").stream()
                 .map(name -> name.toLowerCase(Locale.ROOT))
                 .collect(Collectors.toUnmodifiableSet());

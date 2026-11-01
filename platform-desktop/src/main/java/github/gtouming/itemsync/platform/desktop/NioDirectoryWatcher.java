@@ -1,4 +1,4 @@
-package github.gtouming.itemsync.cli;
+package github.gtouming.itemsync.platform.desktop;
 
 import java.io.IOException;
 import java.nio.file.ClosedWatchServiceException;
@@ -15,14 +15,14 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.Objects;
 import java.util.function.Consumer;
 
-final class NioDirectoryWatcher implements AutoCloseable {
+public final class NioDirectoryWatcher implements AutoCloseable {
 
     private final WatchService watchService;
     private final Consumer<Path> listener;
     private final Thread thread;
     private volatile boolean running = true;
 
-    NioDirectoryWatcher(Path root, Consumer<Path> listener) throws IOException {
+    public NioDirectoryWatcher(Path root, Consumer<Path> listener) throws IOException {
         Objects.requireNonNull(root, "root");
         this.listener = Objects.requireNonNull(listener, "listener");
         this.watchService = FileSystems.getDefault().newWatchService();
