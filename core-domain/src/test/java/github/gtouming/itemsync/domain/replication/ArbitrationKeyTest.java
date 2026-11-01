@@ -3,6 +3,11 @@ package github.gtouming.itemsync.domain.replication;
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Random;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -36,5 +41,22 @@ class ArbitrationKeyTest {
 
         assertEquals(0, left.compareTo(right));
         assertEquals(left, right);
+    }
+
+    @Test
+    void sortsByTimeThenDeviceId() {
+        List<ArbitrationKey> keys = new ArrayList<>(List.of(
+                new ArbitrationKey(LogicalClock.of(7), A),
+                new ArbitrationKey(LogicalClock.of(5), B),
+                new ArbitrationKey(LogicalClock.of(5), A),
+                new ArbitrationKey(LogicalClock.of(7), B)));
+        Collections.shuffle(keys, new Random(42));
+        keys.sort(null);
+
+        assertEquals(List.of(
+                new ArbitrationKey(LogicalClock.of(5), A),
+                new ArbitrationKey(LogicalClock.of(5), B),
+                new ArbitrationKey(LogicalClock.of(7), A),
+                new ArbitrationKey(LogicalClock.of(7), B)), keys);
     }
 }

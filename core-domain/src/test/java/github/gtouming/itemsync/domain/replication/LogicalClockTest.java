@@ -74,4 +74,17 @@ class LogicalClockTest {
         assertThrows(ArithmeticException.class, maxed::tick);
         assertThrows(ArithmeticException.class, () -> maxed.observe(Long.MAX_VALUE));
     }
+
+    @Test
+    void observeOverloadUsesRemoteValue() {
+        LogicalClock local = LogicalClock.of(3);
+        LogicalClock remote = LogicalClock.of(10);
+
+        assertEquals(11L, local.observe(remote).value());
+    }
+
+    @Test
+    void observeNullRemoteIsRejected() {
+        assertThrows(NullPointerException.class, () -> LogicalClock.ZERO.observe((LogicalClock) null));
+    }
 }

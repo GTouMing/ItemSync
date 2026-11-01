@@ -124,4 +124,51 @@ class VersionVectorTest {
 
         assertThrows(ArithmeticException.class, () -> maxed.increment(A));
     }
+
+    @Test
+    void compareIsAntisymmetric() {
+        List<VersionVector> vectors = List.of(
+                VersionVector.empty(),
+                VersionVector.counter(A, 1),
+                VersionVector.counter(A, 2),
+                VersionVector.counter(B, 1),
+                VersionVector.of(Map.of(A, 1L, B, 1L)),
+                VersionVector.of(Map.of(A, 2L, B, 1L)),
+                VersionVector.of(Map.of(A, 1L, B, 2L)));
+
+        for (VersionVector left : vectors) {
+            for (VersionVector right : vectors) {
+                assertEquals(inverse(left.compare(right)), right.compare(left),
+                        () -> left + " vs " + right);
+            }
+        }
+    }
+
+    @Test
+    void compareIsTransitiveForDominance() {
+        VersionVector smallest = VersionVector.counter(A, 1);
+        VersionVector middle = VersionVector.counter(A, 2);
+        VersionVector largest = VersionVector.of(Map.of(A, 2L, B, 1L));
+
+        assertEquals(VersionOrder.AFTER, middle.compare(smallest));
+        assertEquals(VersionOrder.AFTER, largest.compare(middle));
+        assertEquals(VersionOrder.AFTER, largest.compare(smallest));
+    }
+
+    @Test
+    void nodesViewCannotBeModified() {
+        VersionVector vector = VersionVector.of(Map.of(A, 1L, B, 2L));
+
+        assertThrows(UnsupportedOperationException.class, () -> vector.nodes().add(C));
+        assertThrows(UnsupportedOperationException.class, () -> vector.nodes().clear());
+    }
+
+    private static VersionOrder inverse(VersionOrder order) {
+        return switch (order) {
+            case BEFORE -> VersionOrder.AFTER;
+            case AFTER -> VersionOrder.BEFORE;
+            case EQUAL -> VersionOrder.EQUAL;
+            case CONCURRENT -> VersionOrder.CONCURRENT;
+        };
+    }
 }
