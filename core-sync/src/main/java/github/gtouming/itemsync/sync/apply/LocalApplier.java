@@ -9,15 +9,14 @@ import github.gtouming.itemsync.domain.identity.NodeId;
 import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.identity.VersionId;
 import github.gtouming.itemsync.domain.model.Conflict;
-import github.gtouming.itemsync.domain.model.FileVersion;
 import github.gtouming.itemsync.domain.model.Item;
 import github.gtouming.itemsync.domain.model.ItemKind;
 import github.gtouming.itemsync.domain.model.ManifestEntry;
-import github.gtouming.itemsync.domain.model.Tombstone;
 import github.gtouming.itemsync.domain.replication.VersionVector;
 import github.gtouming.itemsync.store.blob.BlobStore;
 import github.gtouming.itemsync.store.metadata.MetadataStore;
 import github.gtouming.itemsync.sync.fs.FileHashing;
+import github.gtouming.itemsync.sync.state.LocalStateWriter;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -36,7 +35,6 @@ import java.util.function.Supplier;
 
 public final class LocalApplier {
 
-    private static final int KEEP_VERSIONS = 10;
     private static final DateTimeFormatter CONFLICT_STAMP =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").withZone(ZoneOffset.UTC);
 
@@ -48,6 +46,7 @@ public final class LocalApplier {
     private final NodeId localNode;
     private final DeviceId localDevice;
     private final Supplier<Instant> clock;
+    private final LocalStateWriter writer;
 
     public LocalApplier(Path syncRoot, MetadataStore store, BlobStore blobs,
                         PhysicalPathResolver paths, SyncRootId rootId,
@@ -60,6 +59,7 @@ public final class LocalApplier {
         this.localNode = Objects.requireNonNull(localNode, "localNode");
         this.localDevice = Objects.requireNonNull(localDevice, "localDevice");
         this.clock = Objects.requireNonNull(clock, "clock");
+        this.writer = new LocalStateWriter(store, rootId, clock);
     }
 
     public VersionId applyRemote(ManifestEntry remote, BlobFetcher fetcher, NodeId sourceNode)
@@ -76,7 +76,7 @@ public final class LocalApplier {
         Path target = paths.resolve(syncRoot, remote.path());
         if (remote.kind() == ItemKind.DIRECTORY) {
             Files.createDirectories(target);
-            storeDirectory(remote);
+            writer.recordDirectory(remote.path(), remote.vector());
             return null;
         }
 
@@ -89,7 +89,8 @@ public final class LocalApplier {
             throw new IOException("blob hash mismatch: expected " + expected + ", got " + stored);
         }
         writeAtomically(target, expected, remote.mtime());
-        return storeFile(remote.path(), expected, remote.size(), remote.mtime(), remote.vector(), sourceNode);
+        return writer.recordFile(remote.path(), expected, remote.size(), remote.mtime(),
+                remote.vector(), sourceNode);
     }
 
     public void resolveConflict(ManifestEntry local, ManifestEntry remote,
@@ -103,7 +104,7 @@ public final class LocalApplier {
             return;
         }
         if (remote.deleted()) {
-            recordConflict(local.path(), currentVersionId(local.path()), null, null);
+            recordConflict(local.path(), writer.currentVersionId(local.path()), null, null);
             return;
         }
         if (local.deleted()) {
@@ -112,7 +113,7 @@ public final class LocalApplier {
             return;
         }
 
-        VersionId localVersion = currentVersionId(local.path());
+        VersionId localVersion = writer.currentVersionId(local.path());
         Path source = paths.resolve(syncRoot, local.path());
         BlobHash localHash = FileHashing.sha256(source);
         try (InputStream in = Files.newInputStream(source)) {
@@ -129,7 +130,7 @@ public final class LocalApplier {
         Instant copyMtime = Files.getLastModifiedTime(copyTarget).toInstant();
         long copySize = Files.size(copyTarget);
         VersionVector copyVector = local.vector().increment(localNode);
-        storeFile(copyPath, localHash, copySize, copyMtime, copyVector, localNode);
+        writer.recordFile(copyPath, localHash, copySize, copyMtime, copyVector, localNode);
 
         VersionId remoteVersion = applyRemote(remote, fetcher, sourceNode);
         recordConflict(local.path(), localVersion, remoteVersion, copyPath);
@@ -140,51 +141,7 @@ public final class LocalApplier {
         if (Files.isRegularFile(target)) {
             Files.delete(target);
         }
-        storeTombstone(remote.path(), remote.kind(), remote.vector(), sourceNode);
-    }
-
-    private void storeDirectory(ManifestEntry remote) {
-        store.inTransaction(transaction -> {
-            ItemId itemId = transaction.items().find(rootId, remote.path())
-                    .map(Item::id)
-                    .orElseGet(() -> new ItemId(UUID.randomUUID().toString()));
-            transaction.items().upsert(new Item(itemId, rootId, remote.path(), ItemKind.DIRECTORY,
-                    null, remote.vector(), null));
-            transaction.tombstones().delete(itemId);
-            return null;
-        });
-    }
-
-    private void storeTombstone(LogicalPath path, ItemKind kind, VersionVector vector, NodeId sourceNode) {
-        Instant now = clock.get();
-        store.inTransaction(transaction -> {
-            Optional<Item> existing = transaction.items().find(rootId, path);
-            ItemId itemId = existing.map(Item::id)
-                    .orElseGet(() -> new ItemId(UUID.randomUUID().toString()));
-            ItemKind effectiveKind = existing.map(Item::kind).orElse(kind);
-            transaction.items().upsert(new Item(itemId, rootId, path, effectiveKind,
-                    null, vector, now));
-            transaction.tombstones().upsert(new Tombstone(itemId, vector, now, sourceNode));
-            return null;
-        });
-    }
-
-    private VersionId storeFile(LogicalPath path, BlobHash hash, long size, Instant mtime,
-                                VersionVector vector, NodeId sourceNode) {
-        Instant now = clock.get();
-        return store.inTransaction(transaction -> {
-            ItemId itemId = transaction.items().find(rootId, path)
-                    .map(Item::id)
-                    .orElseGet(() -> new ItemId(UUID.randomUUID().toString()));
-            VersionId versionId = new VersionId(UUID.randomUUID().toString());
-            transaction.items().upsert(new Item(itemId, rootId, path, ItemKind.FILE,
-                    versionId, vector, null));
-            transaction.versions().insert(new FileVersion(versionId, itemId, hash, size, mtime,
-                    sourceNode, vector, null, now));
-            transaction.versions().deleteOlderThan(itemId, KEEP_VERSIONS);
-            transaction.tombstones().delete(itemId);
-            return versionId;
-        });
+        writer.recordTombstone(remote.path(), remote.kind(), remote.vector(), sourceNode);
     }
 
     private void recordConflict(LogicalPath path, VersionId localVersion,
@@ -201,10 +158,6 @@ public final class LocalApplier {
                 copyPath,
                 clock.get(),
                 null));
-    }
-
-    private VersionId currentVersionId(LogicalPath path) {
-        return store.items().find(rootId, path).map(Item::currentVersion).orElse(null);
     }
 
     private LogicalPath conflictPath(LogicalPath original, Instant now) {
