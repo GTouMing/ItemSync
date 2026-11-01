@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.sync.trigger;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -18,7 +20,7 @@ public record AlarmSchedule(Set<DayOfWeek> days, LocalTime time, ZoneId zone) {
         if (days.isEmpty()) {
             throw new IllegalArgumentException("alarm schedule needs at least one day");
         }
-        days = Set.copyOf(days);
+        days = Compat.copySet(days);
     }
 
     public Instant nextFire(Instant after) {

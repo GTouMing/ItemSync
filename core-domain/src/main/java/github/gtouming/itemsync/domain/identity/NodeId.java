@@ -6,7 +6,7 @@ public record NodeId(String value) {
 
     public NodeId {
         Objects.requireNonNull(value, "value");
-        if (value.isBlank()) {
+        if (value.trim().isEmpty()) {
             throw new IllegalArgumentException("node id must not be blank");
         }
     }

@@ -6,7 +6,7 @@ public record SyncRunId(String value) {
 
     public SyncRunId {
         Objects.requireNonNull(value, "value");
-        if (value.isBlank()) {
+        if (value.trim().isEmpty()) {
             throw new IllegalArgumentException("sync run id must not be blank");
         }
     }

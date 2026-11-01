@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.store.metadata.sql;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.identity.ItemId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
@@ -82,7 +84,7 @@ final class SqlItemRepository implements ItemRepository {
         String nextCursor = items.size() == limit
                 ? items.get(items.size() - 1).logicalPath().value()
                 : null;
-        return new ItemPage(List.copyOf(items), nextCursor);
+        return new ItemPage(Compat.copyList(items), nextCursor);
     }
 
     @Override

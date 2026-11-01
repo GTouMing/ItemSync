@@ -7,7 +7,7 @@ public record DeviceId(String value) implements Comparable<DeviceId> {
 
     public DeviceId {
         Objects.requireNonNull(value, "value");
-        if (value.isBlank()) {
+        if (value.trim().isEmpty()) {
             throw new IllegalArgumentException("device id must not be blank");
         }
     }

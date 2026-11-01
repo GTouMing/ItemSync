@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.sync.plan;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.model.ManifestEntry;
 
@@ -60,6 +62,6 @@ public final class SyncPlanner {
                 actions.add(action);
             }
         }
-        return List.copyOf(actions);
+        return Compat.copyList(actions);
     }
 }

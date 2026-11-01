@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.sync.ignore;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 
 import java.util.ArrayList;
@@ -11,12 +13,12 @@ public final class IgnoreRules {
 
     public static final String FILE_NAME = ".isignore";
 
-    private static final IgnoreRules EMPTY = new IgnoreRules(List.of());
+    private static final IgnoreRules EMPTY = new IgnoreRules(Compat.list());
 
     private final List<Rule> rules;
 
     private IgnoreRules(List<Rule> rules) {
-        this.rules = List.copyOf(rules);
+        this.rules = Compat.copyList(rules);
     }
 
     public static IgnoreRules empty() {

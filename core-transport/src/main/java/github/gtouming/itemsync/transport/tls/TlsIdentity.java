@@ -1,5 +1,6 @@
 package github.gtouming.itemsync.transport.tls;
 
+import github.gtouming.itemsync.domain.compat.Compat;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder;
@@ -34,7 +35,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.Enumeration;
-import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Set;
 
@@ -64,7 +64,7 @@ public final class TlsIdentity {
     public static TlsIdentity generate(String commonName, char[] password) {
         Objects.requireNonNull(commonName, "commonName");
         Objects.requireNonNull(password, "password");
-        if (commonName.isBlank()) {
+        if (commonName.trim().isEmpty()) {
             throw new IllegalArgumentException("common name must not be blank");
         }
         if (password.length == 0) {
@@ -150,7 +150,7 @@ public final class TlsIdentity {
     }
 
     public SSLContext sslContext(String expectedPeerFingerprint) {
-        return sslContext(Set.of(expectedPeerFingerprint));
+        return sslContext(Compat.set(expectedPeerFingerprint));
     }
 
     public SSLContext sslContext(Set<String> expectedPeerFingerprints) {
@@ -174,7 +174,7 @@ public final class TlsIdentity {
         Objects.requireNonNull(certificate, "certificate");
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(certificate.getEncoded());
-            return HexFormat.of().formatHex(digest);
+            return Compat.hex(digest);
         } catch (CertificateEncodingException | NoSuchAlgorithmException e) {
             throw new IllegalStateException("cannot compute certificate fingerprint", e);
         }

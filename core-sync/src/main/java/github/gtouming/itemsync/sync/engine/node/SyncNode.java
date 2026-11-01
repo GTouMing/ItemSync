@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.sync.engine.node;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
@@ -66,7 +68,7 @@ public final class SyncNode implements AutoCloseable {
     private final Map<NodeId, PeerLink> peers = new ConcurrentHashMap<>();
     private final Map<String, PeerLink> peersByFingerprint = new ConcurrentHashMap<>();
 
-    private volatile List<ManifestEntry> manifestCache = List.of();
+    private volatile List<ManifestEntry> manifestCache = Compat.list();
     private volatile LogicalClock clock = LogicalClock.ZERO;
     private volatile IOException lastError;
 
@@ -75,7 +77,7 @@ public final class SyncNode implements AutoCloseable {
                     TlsIdentity identity, DeviceId deviceId, String expectedClientFingerprint,
                     int port, Path transferTempDir) throws IOException {
         this(nodeId, groupId, rootId, syncRoot, store, blobs, paths, identity, deviceId,
-                Set.of(expectedClientFingerprint), port, transferTempDir);
+                Compat.set(expectedClientFingerprint), port, transferTempDir);
     }
 
     public SyncNode(NodeId nodeId, GroupId groupId, SyncRootId rootId, Path syncRoot,
@@ -154,7 +156,7 @@ public final class SyncNode implements AutoCloseable {
         try {
             reconcileAndCache();
             Map<PeerLink, SyncRunResult> results = new LinkedHashMap<>();
-            for (PeerLink link : List.copyOf(peers.values())) {
+            for (PeerLink link : Compat.copyList(peers.values())) {
                 results.put(link, engine.pullOnce(link.remote));
             }
             reconcileAndCache();
@@ -163,7 +165,7 @@ public final class SyncNode implements AutoCloseable {
                     sendNotify(entry.getKey());
                 }
             }
-            return List.copyOf(results.values());
+            return Compat.copyList(results.values());
         } finally {
             syncLock.unlock();
         }
@@ -189,7 +191,7 @@ public final class SyncNode implements AutoCloseable {
 
     @Override
     public void close() {
-        for (PeerLink link : List.copyOf(peers.values())) {
+        for (PeerLink link : Compat.copyList(peers.values())) {
             link.remote.close();
         }
         peers.clear();

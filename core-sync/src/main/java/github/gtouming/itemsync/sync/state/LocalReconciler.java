@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.sync.state;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.identity.BlobHash;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
@@ -99,7 +101,7 @@ public final class LocalReconciler {
             if (seen.contains(entry.path())) {
                 continue;
             }
-            VersionVector vector = VersionVector.of(Map.of(localNode, 1L));
+            VersionVector vector = VersionVector.of(Compat.map(localNode, 1L));
             if (entry.kind() == ItemKind.DIRECTORY) {
                 writer.recordDirectory(entry.path(), vector);
             } else {
@@ -158,6 +160,6 @@ public final class LocalReconciler {
             entries.add(new ManifestEntry(item.logicalPath(), ItemKind.FILE, current.blobHash(),
                     current.size(), current.mtime(), item.vector(), false));
         }
-        return List.copyOf(entries);
+        return Compat.copyList(entries);
     }
 }

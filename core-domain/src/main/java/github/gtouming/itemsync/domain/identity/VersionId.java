@@ -6,7 +6,7 @@ public record VersionId(String value) {
 
     public VersionId {
         Objects.requireNonNull(value, "value");
-        if (value.isBlank()) {
+        if (value.trim().isEmpty()) {
             throw new IllegalArgumentException("version id must not be blank");
         }
     }

@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.sync.state;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.identity.BlobHash;
 import github.gtouming.itemsync.domain.identity.ItemId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
@@ -57,7 +59,7 @@ public final class VersionHistoryService {
         return store.items().page(rootId, null, limit).items().stream()
                 .filter(item -> item.kind() == ItemKind.FILE)
                 .map(item -> new ItemView(item.id(), item.logicalPath()))
-                .toList();
+                .collect(java.util.stream.Collectors.toList());
     }
 
     public List<FileVersion> versions(ItemId itemId) {
@@ -97,7 +99,7 @@ public final class VersionHistoryService {
         try {
             try (InputStream in = blobs.open(hash);
                  OutputStream out = Files.newOutputStream(temp)) {
-                in.transferTo(out);
+                Compat.copy(in, out);
             }
             Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE);

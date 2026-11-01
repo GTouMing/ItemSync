@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.transport.discovery;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.NodeId;
 
@@ -14,6 +16,6 @@ public record DiscoveredPeer(NodeId nodeId, DeviceId deviceId, int protocolVersi
         Objects.requireNonNull(nodeId, "nodeId");
         Objects.requireNonNull(deviceId, "deviceId");
         Objects.requireNonNull(fingerprint, "fingerprint");
-        addresses = List.copyOf(Objects.requireNonNull(addresses, "addresses"));
+        addresses = Compat.copyList(Objects.requireNonNull(addresses, "addresses"));
     }
 }

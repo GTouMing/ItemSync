@@ -1,6 +1,7 @@
 package github.gtouming.itemsync.domain.identity;
 
-import java.util.HexFormat;
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import java.util.Locale;
 import java.util.Objects;
 import java.util.regex.Pattern;
@@ -31,7 +32,7 @@ public record BlobHash(String value) {
             throw new IllegalArgumentException(
                     "sha-256 digest must be " + SHA_256_BYTES + " bytes, got " + digest.length);
         }
-        return new BlobHash(HexFormat.of().formatHex(digest));
+        return new BlobHash(Compat.hex(digest));
     }
 
     @Override

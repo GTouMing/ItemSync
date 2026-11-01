@@ -14,7 +14,7 @@ public record SyncRoot(SyncRootId id, GroupId groupId, String physicalPath,
         Objects.requireNonNull(groupId, "groupId");
         Objects.requireNonNull(physicalPath, "physicalPath");
         Objects.requireNonNull(createdAt, "createdAt");
-        if (physicalPath.isBlank()) {
+        if (physicalPath.trim().isEmpty()) {
             throw new IllegalArgumentException("physical path must not be blank");
         }
     }

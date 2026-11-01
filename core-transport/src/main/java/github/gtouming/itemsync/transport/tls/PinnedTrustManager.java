@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.transport.tls;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import javax.net.ssl.X509TrustManager;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
@@ -13,7 +15,7 @@ public final class PinnedTrustManager implements X509TrustManager {
     private final Set<String> expectedFingerprints;
 
     public PinnedTrustManager(String expectedFingerprint) {
-        this(Set.of(expectedFingerprint));
+        this(Compat.set(expectedFingerprint));
     }
 
     public PinnedTrustManager(Set<String> expectedFingerprints) {
@@ -24,12 +26,12 @@ public final class PinnedTrustManager implements X509TrustManager {
         this.expectedFingerprints = expectedFingerprints.stream()
                 .map(fingerprint -> {
                     Objects.requireNonNull(fingerprint, "fingerprint");
-                    if (fingerprint.isBlank()) {
+                    if (fingerprint.trim().isEmpty()) {
                         throw new IllegalArgumentException("expected fingerprint must not be blank");
                     }
                     return fingerprint.toLowerCase(Locale.ROOT);
                 })
-                .collect(Collectors.toUnmodifiableSet());
+                .collect(Collectors.toSet());
     }
 
     @Override

@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.sync.engine.transport;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.identity.BlobHash;
 import github.gtouming.itemsync.domain.identity.NodeId;
 import github.gtouming.itemsync.domain.identity.SyncRootId;
@@ -222,7 +224,7 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
                         + ", received " + entries.size()));
                 return;
             }
-            future.complete(List.copyOf(entries));
+            future.complete(Compat.copyList(entries));
         }
 
         private void fail(IOException failure) {

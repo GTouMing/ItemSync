@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.domain.replication;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.identity.NodeId;
 
 import java.util.Collections;
@@ -15,7 +17,7 @@ import java.util.TreeMap;
 public final class VersionVector {
 
     private static final Comparator<NodeId> BY_VALUE = Comparator.comparing(NodeId::value);
-    private static final VersionVector EMPTY = new VersionVector(Map.of());
+    private static final VersionVector EMPTY = new VersionVector(Compat.map());
 
     private final NavigableMap<NodeId, Long> counters;
 
@@ -46,7 +48,7 @@ public final class VersionVector {
 
     public static VersionVector counter(NodeId node, long counter) {
         Objects.requireNonNull(node, "node");
-        return of(Map.of(node, counter));
+        return of(Compat.map(node, counter));
     }
 
     public long counterOf(NodeId node) {

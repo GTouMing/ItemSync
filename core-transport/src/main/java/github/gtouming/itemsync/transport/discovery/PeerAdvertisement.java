@@ -12,7 +12,7 @@ public record PeerAdvertisement(NodeId nodeId, DeviceId deviceId, int protocolVe
         Objects.requireNonNull(nodeId, "nodeId");
         Objects.requireNonNull(deviceId, "deviceId");
         Objects.requireNonNull(fingerprint, "fingerprint");
-        if (fingerprint.isBlank()) {
+        if (fingerprint.trim().isEmpty()) {
             throw new IllegalArgumentException("fingerprint must not be blank");
         }
         if (protocolVersion <= 0) {

@@ -6,7 +6,7 @@ public record TriggerId(String value) {
 
     public TriggerId {
         Objects.requireNonNull(value, "value");
-        if (value.isBlank()) {
+        if (value.trim().isEmpty()) {
             throw new IllegalArgumentException("trigger id must not be blank");
         }
     }

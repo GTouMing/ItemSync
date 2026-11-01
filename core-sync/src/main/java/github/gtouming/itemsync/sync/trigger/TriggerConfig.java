@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.sync.trigger;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import java.util.Objects;
 import java.util.Set;
 
@@ -17,7 +19,7 @@ public sealed interface TriggerConfig {
     record ProcessEvent(Set<String> executables, boolean onStart, boolean onStop)
             implements TriggerConfig {
         public ProcessEvent {
-            executables = Set.copyOf(Objects.requireNonNull(executables, "executables"));
+            executables = Compat.copySet(Objects.requireNonNull(executables, "executables"));
             if (executables.isEmpty()) {
                 throw new IllegalArgumentException("process trigger needs at least one executable");
             }

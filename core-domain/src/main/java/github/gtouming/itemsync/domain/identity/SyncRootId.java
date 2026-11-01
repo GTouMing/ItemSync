@@ -6,7 +6,7 @@ public record SyncRootId(String value) {
 
     public SyncRootId {
         Objects.requireNonNull(value, "value");
-        if (value.isBlank()) {
+        if (value.trim().isEmpty()) {
             throw new IllegalArgumentException("sync root id must not be blank");
         }
     }

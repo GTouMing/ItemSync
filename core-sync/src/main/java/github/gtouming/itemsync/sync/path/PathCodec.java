@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.sync.path;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 
 import java.util.ArrayList;
@@ -24,7 +26,7 @@ public final class PathCodec {
         for (String segment : path.segments()) {
             encoded.add(encodeWindowsSegment(segment));
         }
-        return List.copyOf(encoded);
+        return Compat.copyList(encoded);
     }
 
     public static LogicalPath decodeWindowsSegments(List<String> segments) {
@@ -136,11 +138,11 @@ public final class PathCodec {
     }
 
     private static Set<String> reservedNames() {
-        Set<String> names = new HashSet<>(Set.of("CON", "PRN", "AUX", "NUL"));
+        Set<String> names = new HashSet<>(Compat.set("CON", "PRN", "AUX", "NUL"));
         for (int i = 1; i <= 9; i++) {
             names.add("COM" + i);
             names.add("LPT" + i);
         }
-        return Set.copyOf(names);
+        return Compat.copySet(names);
     }
 }

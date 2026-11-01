@@ -14,7 +14,7 @@ public record Peer(NodeId nodeId, DeviceId deviceId, String deviceName, DevicePl
         Objects.requireNonNull(nodeId, "nodeId");
         Objects.requireNonNull(deviceId, "deviceId");
         Objects.requireNonNull(certFingerprint, "certFingerprint");
-        if (certFingerprint.isBlank()) {
+        if (certFingerprint.trim().isEmpty()) {
             throw new IllegalArgumentException("certificate fingerprint must not be blank");
         }
     }

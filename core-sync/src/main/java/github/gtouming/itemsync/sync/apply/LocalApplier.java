@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.sync.apply;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.identity.BlobHash;
 import github.gtouming.itemsync.domain.identity.ConflictId;
 import github.gtouming.itemsync.domain.identity.DeviceId;
@@ -149,7 +151,7 @@ public final class LocalApplier {
                                 VersionId remoteVersion, VersionVector remoteVector,
                                 LogicalPath copyPath) {
         Optional<ItemId> itemId = store.items().find(rootId, path).map(Item::id);
-        if (itemId.isEmpty()) {
+        if (!itemId.isPresent()) {
             return;
         }
         store.conflicts().insert(new Conflict(
@@ -202,7 +204,7 @@ public final class LocalApplier {
         Path temp = Files.createTempFile(parent, ".itemsync-", ".tmp");
         try {
             try (InputStream in = blobs.open(hash); OutputStream out = Files.newOutputStream(temp)) {
-                in.transferTo(out);
+                Compat.copy(in, out);
             }
             Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
         } finally {

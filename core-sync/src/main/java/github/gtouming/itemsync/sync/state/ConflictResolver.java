@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.sync.state;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.identity.BlobHash;
 import github.gtouming.itemsync.domain.identity.ConflictId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
@@ -67,7 +69,7 @@ public final class ConflictResolver {
                     version(conflict.localVersion()), version(conflict.remoteVersion()),
                     conflict.copyPath(), conflict.detectedAt()));
         }
-        return List.copyOf(views);
+        return Compat.copyList(views);
     }
 
     public void resolve(ConflictId id, Resolution resolution) throws IOException {
@@ -151,7 +153,7 @@ public final class ConflictResolver {
         try {
             try (InputStream in = Files.newInputStream(source);
                  OutputStream out = Files.newOutputStream(temp)) {
-                in.transferTo(out);
+                Compat.copy(in, out);
             }
             Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING,
                     StandardCopyOption.ATOMIC_MOVE);

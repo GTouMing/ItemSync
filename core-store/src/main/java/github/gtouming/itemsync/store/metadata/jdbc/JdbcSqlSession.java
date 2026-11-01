@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.store.metadata.jdbc;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.store.metadata.MetadataException;
 import github.gtouming.itemsync.store.metadata.sql.RowConsumer;
 import github.gtouming.itemsync.store.metadata.sql.RowMapper;
@@ -47,7 +49,7 @@ final class JdbcSqlSession implements SqlSession {
     public <T> List<T> query(String sql, RowMapper<T> mapper, Object... arguments) {
         List<T> results = new ArrayList<>();
         queryEach(sql, cursor -> results.add(mapper.map(cursor)), arguments);
-        return List.copyOf(results);
+        return Compat.copyList(results);
     }
 
     @Override

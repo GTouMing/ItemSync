@@ -6,7 +6,7 @@ public record ConflictId(String value) {
 
     public ConflictId {
         Objects.requireNonNull(value, "value");
-        if (value.isBlank()) {
+        if (value.trim().isEmpty()) {
             throw new IllegalArgumentException("conflict id must not be blank");
         }
     }

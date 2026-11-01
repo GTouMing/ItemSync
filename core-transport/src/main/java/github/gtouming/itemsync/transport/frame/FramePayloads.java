@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.transport.frame;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;

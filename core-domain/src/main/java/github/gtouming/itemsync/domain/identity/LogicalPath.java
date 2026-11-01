@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.domain.identity;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import java.util.List;
 import java.util.Objects;
 
@@ -40,7 +42,7 @@ public record LogicalPath(String value) implements Comparable<LogicalPath> {
     }
 
     public List<String> segments() {
-        return List.of(value.split("/", -1));
+        return Compat.list(value.split("/", -1));
     }
 
     public String name() {

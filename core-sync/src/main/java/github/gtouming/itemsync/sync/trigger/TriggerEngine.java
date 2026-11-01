@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.sync.trigger;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.error.ErrorCode;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
@@ -163,7 +165,7 @@ public final class TriggerEngine implements AutoCloseable {
                             SyncRunState.FAILED, started, clock.get(), null,
                             ErrorCode.SYNC_RUN_FAILED));
                 }
-                return List.of();
+                return Compat.list();
             });
         } catch (IOException e) {
             lastError = e;

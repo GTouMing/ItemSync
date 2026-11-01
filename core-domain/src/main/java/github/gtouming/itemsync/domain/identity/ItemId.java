@@ -6,7 +6,7 @@ public record ItemId(String value) {
 
     public ItemId {
         Objects.requireNonNull(value, "value");
-        if (value.isBlank()) {
+        if (value.trim().isEmpty()) {
             throw new IllegalArgumentException("item id must not be blank");
         }
     }

@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.sync.scan;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.model.ItemKind;
 import github.gtouming.itemsync.sync.fs.FileHashing;
@@ -56,7 +58,7 @@ public final class FileScanner {
                 return FileVisitResult.CONTINUE;
             }
         });
-        return List.copyOf(entries);
+        return Compat.copyList(entries);
     }
 
     private static LogicalPath toLogicalPath(Path root, Path path) {

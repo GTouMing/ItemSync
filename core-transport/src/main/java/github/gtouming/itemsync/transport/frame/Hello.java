@@ -9,7 +9,7 @@ public record Hello(NodeId nodeId, int protocolVersion, String certificateFinger
     public Hello {
         Objects.requireNonNull(nodeId, "nodeId");
         Objects.requireNonNull(certificateFingerprint, "certificateFingerprint");
-        if (certificateFingerprint.isBlank()) {
+        if (certificateFingerprint.trim().isEmpty()) {
             throw new IllegalArgumentException("certificate fingerprint must not be blank");
         }
     }

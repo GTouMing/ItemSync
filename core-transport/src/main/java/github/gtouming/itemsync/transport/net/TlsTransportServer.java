@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.transport.net;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.transport.frame.Frame;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
@@ -29,7 +31,7 @@ public final class TlsTransportServer implements AutoCloseable {
 
     public TlsTransportServer(TlsIdentity identity, String expectedClientFingerprint,
                               int port, FrameHandler handler) throws IOException {
-        this(identity, Set.of(expectedClientFingerprint), port, handler);
+        this(identity, Compat.set(expectedClientFingerprint), port, handler);
     }
 
     public TlsTransportServer(TlsIdentity identity, Set<String> expectedClientFingerprints,

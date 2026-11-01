@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.store.metadata;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -8,7 +10,7 @@ import java.util.List;
 
 public final class MetadataMigrations {
 
-    private static final List<Migration> MIGRATIONS = List.of(
+    private static final List<Migration> MIGRATIONS = Compat.list(
             new Migration(1, "db/migrations/001_init.sql"),
             new Migration(2, "db/migrations/002_conflict_remote_vector.sql"));
 
@@ -30,7 +32,7 @@ public final class MetadataMigrations {
                 pending.add(migration);
             }
         }
-        return List.copyOf(pending);
+        return Compat.copyList(pending);
     }
 
     public static List<String> splitStatements(String sql) {
@@ -46,7 +48,7 @@ public final class MetadataMigrations {
                 statements.add(trimmed);
             }
         }
-        return List.copyOf(statements);
+        return Compat.copyList(statements);
     }
 
     public record Migration(int version, String resource) {
@@ -61,7 +63,7 @@ public final class MetadataMigrations {
             if (in == null) {
                 throw new IllegalStateException("missing migration resource: " + resource);
             }
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            return new String(Compat.readAllBytes(in), StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new IllegalStateException("read migration resource failed: " + resource, e);
         }
