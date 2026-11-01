@@ -150,7 +150,7 @@ class ConflictResolverTest {
         assertEquals("local", Files.readString(syncRoot.resolve("docs/a.txt"),
                 StandardCharsets.UTF_8));
         Item item = store.items().find(ROOT, PATH).orElseThrow();
-        assertEquals(VersionVector.of(Map.of(NODE_A, 2L)), item.vector());
+        assertEquals(VersionVector.of(Map.of(NODE_A, 2L, NODE_B, 1L)), item.vector());
         assertTrue(store.conflicts().findOpen(10).isEmpty());
     }
 

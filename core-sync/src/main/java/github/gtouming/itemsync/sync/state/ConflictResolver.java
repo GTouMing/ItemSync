@@ -96,8 +96,7 @@ public final class ConflictResolver {
         }
         FileVersion previousLocal = version(conflict.localVersion());
         VersionVector base = previousLocal == null ? item.vector() : previousLocal.vector();
-        FileVersion remote = version(conflict.remoteVersion());
-        VersionVector remoteVector = remote == null ? VersionVector.empty() : remote.vector();
+        VersionVector remoteVector = conflict.remoteVector();
 
         Path target = paths.resolve(syncRoot, item.logicalPath());
         BlobHashSize content;
