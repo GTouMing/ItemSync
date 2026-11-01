@@ -92,6 +92,7 @@ public final class SyncNode implements AutoCloseable {
         this.remoteSyncServer = new RemoteSyncServer(rootId,
                 (requestedRoot, since) -> manifestCache,
                 BlobSources.of(blobs));
+        this.reconcileAndCache();
         this.server = new TlsTransportServer(identity, expectedClientFingerprint, port, this::onInboundFrame);
         this.server.start();
         this.transferTempDir = tempDir;
