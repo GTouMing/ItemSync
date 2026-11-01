@@ -2,7 +2,10 @@ package github.gtouming.itemsync.transport.tls;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 
@@ -16,6 +19,9 @@ class TlsIdentityTest {
 
     private static TlsIdentity alice;
     private static TlsIdentity bob;
+
+    @TempDir
+    Path temp;
 
     @BeforeAll
     static void createIdentities() {
@@ -58,5 +64,29 @@ class TlsIdentityTest {
     @Test
     void createsTls13Context() {
         assertNotNull(alice.sslContext(bob.fingerprint()));
+    }
+
+    @Test
+    void savesAndLoadsIdentity() throws Exception {
+        char[] password = "secret-pass".toCharArray();
+        TlsIdentity generated = TlsIdentity.generate("persisted", password);
+        Path file = temp.resolve("identity.p12");
+
+        generated.save(file);
+        TlsIdentity loaded = TlsIdentity.load(file, password);
+
+        assertEquals(generated.fingerprint(), loaded.fingerprint());
+        assertNotNull(loaded.sslContext(bob.fingerprint()));
+    }
+
+    @Test
+    void rejectsWrongKeystorePassword() throws Exception {
+        char[] password = "secret-pass".toCharArray();
+        TlsIdentity generated = TlsIdentity.generate("persisted", password);
+        Path file = temp.resolve("identity.p12");
+        generated.save(file);
+
+        assertThrows(IOException.class,
+                () -> TlsIdentity.load(file, "wrong-password".toCharArray()));
     }
 }
