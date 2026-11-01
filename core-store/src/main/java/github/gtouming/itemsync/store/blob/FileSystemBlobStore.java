@@ -1,5 +1,7 @@
 package github.gtouming.itemsync.store.blob;
 
+import github.gtouming.itemsync.domain.compat.Compat;
+
 import github.gtouming.itemsync.domain.identity.BlobHash;
 
 import java.io.IOException;
@@ -39,7 +41,7 @@ public final class FileSystemBlobStore implements BlobStore {
             Path target = pathOf(hash);
             Files.createDirectories(target.getParent());
             try {
-                Files.move(temp, target, StandardCopyOption.ATOMIC_MOVE);
+                Compat.move(temp, target);
             } catch (FileAlreadyExistsException alreadyStored) {
                 // identical content is already stored
             }

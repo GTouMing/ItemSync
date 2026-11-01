@@ -127,8 +127,7 @@ public final class TlsIdentity {
             try (OutputStream out = Files.newOutputStream(temp)) {
                 keyStore.store(out, password);
             }
-            Files.move(temp, absolute, StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE);
+            Compat.move(temp, absolute);
         } catch (GeneralSecurityException e) {
             throw new IOException("cannot save TLS identity", e);
         } finally {

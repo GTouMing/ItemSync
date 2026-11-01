@@ -129,7 +129,7 @@ public final class LocalApplier {
         LogicalPath copyPath = conflictPath(local.path(), clock.get());
         Path copyTarget = paths.resolve(syncRoot, copyPath);
         Files.createDirectories(copyTarget.getParent());
-        Files.move(source, copyTarget, StandardCopyOption.ATOMIC_MOVE);
+        Compat.move(source, copyTarget);
         Instant copyMtime = Files.getLastModifiedTime(copyTarget).toInstant();
         long copySize = Files.size(copyTarget);
         VersionVector copyVector = local.vector().increment(localNode);
@@ -206,7 +206,7 @@ public final class LocalApplier {
             try (InputStream in = blobs.open(hash); OutputStream out = Files.newOutputStream(temp)) {
                 Compat.copy(in, out);
             }
-            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            Compat.move(temp, target);
         } finally {
             Files.deleteIfExists(temp);
         }

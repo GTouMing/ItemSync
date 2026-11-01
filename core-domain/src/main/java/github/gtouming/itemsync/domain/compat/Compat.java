@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -119,6 +121,15 @@ public final class Compat {
         int read;
         while ((read = in.read(buffer)) != -1) {
             out.write(buffer, 0, read);
+        }
+    }
+
+    public static void move(Path source, Path target) throws IOException {
+        try {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);
         }
     }
 

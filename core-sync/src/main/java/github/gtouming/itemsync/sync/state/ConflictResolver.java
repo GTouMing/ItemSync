@@ -155,8 +155,7 @@ public final class ConflictResolver {
                  OutputStream out = Files.newOutputStream(temp)) {
                 Compat.copy(in, out);
             }
-            Files.move(temp, target, StandardCopyOption.REPLACE_EXISTING,
-                    StandardCopyOption.ATOMIC_MOVE);
+            Compat.move(temp, target);
         } finally {
             Files.deleteIfExists(temp);
         }
