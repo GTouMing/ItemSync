@@ -38,6 +38,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -73,6 +74,14 @@ public final class SyncNode implements AutoCloseable {
                     MetadataStore store, BlobStore blobs, PhysicalPathResolver paths,
                     TlsIdentity identity, DeviceId deviceId, String expectedClientFingerprint,
                     int port, Path transferTempDir) throws IOException {
+        this(nodeId, groupId, rootId, syncRoot, store, blobs, paths, identity, deviceId,
+                Set.of(expectedClientFingerprint), port, transferTempDir);
+    }
+
+    public SyncNode(NodeId nodeId, GroupId groupId, SyncRootId rootId, Path syncRoot,
+                    MetadataStore store, BlobStore blobs, PhysicalPathResolver paths,
+                    TlsIdentity identity, DeviceId deviceId, Set<String> expectedClientFingerprints,
+                    int port, Path transferTempDir) throws IOException {
         this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
         this.groupId = Objects.requireNonNull(groupId, "groupId");
         this.rootId = Objects.requireNonNull(rootId, "rootId");
@@ -82,7 +91,10 @@ public final class SyncNode implements AutoCloseable {
         Objects.requireNonNull(blobs, "blobs");
         Objects.requireNonNull(paths, "paths");
         Objects.requireNonNull(deviceId, "deviceId");
-        Objects.requireNonNull(expectedClientFingerprint, "expectedClientFingerprint");
+        Objects.requireNonNull(expectedClientFingerprints, "expectedClientFingerprints");
+        if (expectedClientFingerprints.isEmpty()) {
+            throw new IllegalArgumentException("expected client fingerprints must not be empty");
+        }
         Path tempDir = Objects.requireNonNull(transferTempDir, "transferTempDir");
         Files.createDirectories(tempDir);
 
@@ -94,7 +106,8 @@ public final class SyncNode implements AutoCloseable {
                 (requestedRoot, since) -> manifestCache,
                 BlobSources.of(blobs));
         this.reconcileAndCache();
-        this.server = new TlsTransportServer(identity, expectedClientFingerprint, port, this::onInboundFrame);
+        this.server = new TlsTransportServer(identity, expectedClientFingerprints, port,
+                this::onInboundFrame);
         this.server.start();
         this.transferTempDir = tempDir;
     }
