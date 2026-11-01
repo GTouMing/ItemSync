@@ -25,11 +25,15 @@ import java.awt.Color;
 import java.awt.Desktop;
 import java.awt.Font;
 import java.awt.Graphics2D;
-import java.awt.MenuItem;
-import java.awt.PopupMenu;
 import java.awt.SystemTray;
 import java.awt.TrayIcon;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
+import javax.swing.JMenuItem;
+import javax.swing.JPopupMenu;
+import javax.swing.JWindow;
+import javax.swing.SwingUtilities;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -47,6 +51,7 @@ public final class DesktopApp extends Application {
     private ScheduledExecutorService statusScheduler;
     private ExecutorService worker;
     private TrayIcon trayIcon;
+    private volatile JWindow trayMenuOwner;
     private volatile boolean exiting;
 
     private final Label nodeLabel = new Label();
@@ -255,29 +260,60 @@ public final class DesktopApp extends Application {
 
         trayIcon = new TrayIcon(image, "ItemSync");
         trayIcon.setImageAutoSize(true);
-        PopupMenu menu = new PopupMenu();
-        Font menuFont = trayFont();
-        menu.setFont(menuFont);
-        MenuItem open = new MenuItem("打开");
-        MenuItem sync = new MenuItem("立即同步");
-        MenuItem exit = new MenuItem("退出");
-        open.setFont(menuFont);
-        sync.setFont(menuFont);
-        exit.setFont(menuFont);
-        open.addActionListener(event -> Platform.runLater(stage::show));
-        sync.addActionListener(event -> Platform.runLater(this::syncAsync));
-        exit.addActionListener(event -> Platform.runLater(() -> exit(stage)));
-        menu.add(open);
-        menu.add(sync);
-        menu.addSeparator();
-        menu.add(exit);
-        trayIcon.setPopupMenu(menu);
+        trayIcon.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseReleased(MouseEvent event) {
+                if (event.isPopupTrigger()) {
+                    showTrayMenu(stage, event);
+                }
+            }
+        });
         trayIcon.addActionListener(event -> Platform.runLater(stage::show));
         try {
             SystemTray.getSystemTray().add(trayIcon);
         } catch (AWTException e) {
             trayIcon = null;
         }
+    }
+
+    private void showTrayMenu(Stage stage, MouseEvent event) {
+        JPopupMenu popup = new JPopupMenu();
+        popup.setLightWeightPopupEnabled(false);
+        Font font = trayFont();
+        popup.setFont(font);
+        JMenuItem open = new JMenuItem("打开");
+        JMenuItem sync = new JMenuItem("立即同步");
+        JMenuItem exitItem = new JMenuItem("退出");
+        open.setFont(font);
+        sync.setFont(font);
+        exitItem.setFont(font);
+        open.addActionListener(action -> Platform.runLater(stage::show));
+        sync.addActionListener(action -> Platform.runLater(this::syncAsync));
+        exitItem.addActionListener(action -> Platform.runLater(() -> exit(stage)));
+        popup.add(open);
+        popup.add(sync);
+        popup.addSeparator();
+        popup.add(exitItem);
+        popup.show(trayMenuOwner(), event.getXOnScreen(), event.getYOnScreen());
+    }
+
+    private JWindow trayMenuOwner() {
+        JWindow owner = trayMenuOwner;
+        if (owner == null) {
+            owner = new JWindow();
+            owner.setAlwaysOnTop(true);
+            owner.setFocusableWindowState(false);
+            owner.setSize(1, 1);
+            owner.setLocation(0, 0);
+            try {
+                owner.setOpacity(0f);
+            } catch (RuntimeException ignored) {
+                // translucency may be unsupported
+            }
+            owner.setVisible(true);
+            trayMenuOwner = owner;
+        }
+        return owner;
     }
 
     private static Font trayFont() {
@@ -325,6 +361,11 @@ public final class DesktopApp extends Application {
                 // the tray may already be gone
             }
             trayIcon = null;
+        }
+        JWindow menuOwner = trayMenuOwner;
+        trayMenuOwner = null;
+        if (menuOwner != null) {
+            SwingUtilities.invokeLater(menuOwner::dispose);
         }
     }
 
