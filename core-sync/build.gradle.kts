@@ -16,6 +16,7 @@ tasks.withType<JavaCompile>().configureEach {
 dependencies {
     api(project(":core-domain"))
     api(project(":core-store"))
+    api(project(":core-transport"))
 
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.sqlite.jdbc)
