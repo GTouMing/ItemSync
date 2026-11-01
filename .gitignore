@@ -1,3 +1,6 @@
+### Command Code ###
+.commandcode/taste/
+
 ### Gradle ###
 .gradle/
 build/
