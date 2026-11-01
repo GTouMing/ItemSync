@@ -52,5 +52,6 @@
 | [0016](0016-delivery-order-engine-first.md) | 交付顺序：共享核心 + CLI → Windows UI → Android | 已接受 |
 | [0023](0023-observability.md) | 结构化日志 + 运行历史 + 诊断包 | 已接受 |
 | [0026](0026-out-of-scope-v1.md) | 第一期明确不做的事 | 已接受 |
+| [0027](0027-android-min-sdk-29.md) | Android 最低版本提升到 API 29 | 已接受 |
 
 术语定义见 [../glossary.md](../glossary.md)。

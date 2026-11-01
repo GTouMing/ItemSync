@@ -16,6 +16,7 @@
 | 仅局域网（含 VPN 虚拟局域网），不做公网穿透               | ADR-0026 |
 | 规模上限：10 万项 / 单文件 10 GB / 5 个同步根 / 10 台设备 | ADR-0017 |
 | 点对点加密：TLS 1.3 自签证书 + 指纹固定                   | ADR-0011 |
+| Android 最低版本：Android 10（API 29）                    | ADR-0027 |
 
 ## 2. 系统上下文
 
@@ -238,19 +239,20 @@ CREATE TABLE resume       (blob_hash TEXT NOT NULL, peer_node_id TEXT NOT NULL, 
 ```
 帧头：magic(2) | version(1) | type(1) | length(4) | payload
 
-HELLO            {protocolVersion, nodeId, capabilities[]}
-HELLO_ACK        {protocolVersion, nodeId, capabilities[]}
+HELLO            {protocolVersion, nodeId, certificateFingerprint}
+HELLO_ACK        {protocolVersion, nodeId, certificateFingerprint}
+PING / PONG      {nonce}
+BLOB_GET         {hash, offset}
+BLOB_CHUNK       {offset(8) | length(4) | data | crc32(4)}   // 1 MiB
+BLOB_RESULT      {hash, ok, size, errorCode}
+ERROR            {code, message}
+
+// M0.5 计划：
 NOTIFY           {runId, groupId, logicalTime, vectorSnapshot, changedRootId}
 NOTIFY_ACK       {runId, accepted, queuePosition}
 MANIFEST_REQUEST {rootId, sinceVector, ignoreHash}
-MANIFEST_PAGE    {entries[], nextCursor}      // 流式分页
+MANIFEST_PAGE    {entries[], nextCursor}
 MANIFEST_END     {totalEntries}
-BLOB_GET         {blobHash, offset}
-BLOB_CHUNK       {seq, length, data}          // 1 MiB
-BLOB_RESULT      {blobHash, ok, errorCode}
-VERSION_REQUEST  {itemId, limit}              // 版本历史（仅本地节点间显式请求）
-ERROR            {code, message, retryable}
-PING / PONG
 ```
 
 ## 8. Sync Run 状态机
@@ -278,6 +280,8 @@ IDLE → QUEUED → SCANNING → PLANNING → TRANSFERRING → APPLYING → REVE
 | 密钥库             | ✅ DPAPI                          | ✅ Android Keystore                         |
 | 长路径             | ✅ `\\?\` 前缀                    | ✅ 无 MAX_PATH                              |
 | 大小写敏感         | ❌ 需碰撞检测                     | ✅                                          |
+
+Android 最低版本为 Android 10（API 29），由 TLS 1.3 决定（ADR-0027）。
 
 ## 10. 权限清单
 
