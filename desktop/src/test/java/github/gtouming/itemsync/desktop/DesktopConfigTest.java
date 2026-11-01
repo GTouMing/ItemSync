@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Properties;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -44,6 +45,7 @@ class DesktopConfigTest {
         assertEquals("root-1", config.rootId().value());
         assertEquals(47800, config.port());
         assertEquals("peer-fingerprint", config.expectedClientFingerprint());
+        assertEquals(Set.of("peer-fingerprint"), config.expectedClientFingerprints());
         assertEquals(2, config.peers().size());
         assertEquals("127.0.0.1", config.peers().get(0).host());
         assertEquals(47801, config.peers().get(0).port());
@@ -85,6 +87,21 @@ class DesktopConfigTest {
         assertThrows(IllegalArgumentException.class, () -> DesktopConfig.create(temp, temp,
                 GroupId.random(), SyncRootId.of("root-1"), 47800, "none", List.of(), "",
                 Duration.ofSeconds(30)));
+    }
+
+    @Test
+    void parsesMultipleExpectedClientFingerprints() throws Exception {
+        Properties properties = new Properties();
+        properties.setProperty("root", temp.resolve("root").toString());
+        properties.setProperty("group", "group001");
+        properties.setProperty("expect", "fp-a, fp-b");
+        try (Writer writer = Files.newBufferedWriter(temp.resolve(DesktopConfig.FILE_NAME))) {
+            properties.store(writer, null);
+        }
+
+        DesktopConfig config = DesktopConfig.load(temp);
+
+        assertEquals(Set.of("fp-a", "fp-b"), config.expectedClientFingerprints());
     }
 
     @Test

@@ -31,9 +31,11 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
 
@@ -74,11 +76,18 @@ public final class DesktopService implements AutoCloseable {
         JdbcMetadataStore store = openStore(config.dataDir());
         PhysicalPathResolver physical = resolver();
         BlobStore blobs = new FileSystemBlobStore(config.dataDir());
+        Set<String> acceptedClients = new LinkedHashSet<>(config.expectedClientFingerprints());
+        for (DesktopConfig.PeerTarget peer : config.peers()) {
+            acceptedClients.add(peer.fingerprint());
+        }
+        if (acceptedClients.isEmpty()) {
+            acceptedClients.add("none");
+        }
         SyncNode node;
         try {
             node = new SyncNode(nodeId, config.group(), config.rootId(), config.root(), store,
                     blobs, physical, identity, deviceId,
-                    config.expectedClientFingerprint(), config.port(),
+                    acceptedClients, config.port(),
                     config.dataDir().resolve("transfer"));
             for (DesktopConfig.PeerTarget peer : config.peers()) {
                 addPeer(node, peer);

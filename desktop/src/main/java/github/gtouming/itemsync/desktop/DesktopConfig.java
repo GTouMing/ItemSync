@@ -13,9 +13,11 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public record DesktopConfig(Path dataDir, Path root, GroupId group, SyncRootId rootId,
@@ -63,6 +65,16 @@ public record DesktopConfig(Path dataDir, Path root, GroupId group, SyncRootId r
         }
         return new DesktopConfig(dataDir, root, group, rootId, port, expectedClient,
                 peers, launchCommand, Duration.ofSeconds(debounceSeconds));
+    }
+
+    public Set<String> expectedClientFingerprints() {
+        if (expectedClientFingerprint == null || expectedClientFingerprint.isBlank()) {
+            return Set.of();
+        }
+        return Arrays.stream(expectedClientFingerprint.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isEmpty())
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     public static DesktopConfig create(Path dataDir, Path root, GroupId group, SyncRootId rootId,

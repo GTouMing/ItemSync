@@ -108,15 +108,26 @@ public final class ItemSyncCli {
             throw new IllegalArgumentException("interval and debounce must not be negative");
         }
         String expectedClient = arguments.required("expect");
+        List<PeerAddress> peers = new ArrayList<>();
+        for (String peer : arguments.all("peer")) {
+            peers.add(PeerAddress.parse(peer));
+        }
+        Set<String> acceptedClients = new LinkedHashSet<>(parseFingerprints(expectedClient));
+        for (PeerAddress peer : peers) {
+            acceptedClients.add(peer.fingerprint());
+        }
+        if (acceptedClients.isEmpty()) {
+            acceptedClients.add("none");
+        }
 
         JdbcMetadataStore store = openStore(data);
         SyncNode node;
         try {
             node = new SyncNode(nodeId, group, rootId, root, store,
                     new FileSystemBlobStore(data), resolver(), identity, deviceId,
-                    expectedClient, port, data.resolve("transfer"));
-            for (String peer : arguments.all("peer")) {
-                addPeer(node, PeerAddress.parse(peer));
+                    acceptedClients, port, data.resolve("transfer"));
+            for (PeerAddress peer : peers) {
+                addPeer(node, peer);
             }
         } catch (Exception e) {
             store.close();
@@ -306,7 +317,7 @@ public final class ItemSyncCli {
                   init          --data <dir> --password <pw>
                   fingerprint   --data <dir> --password <pw>
                   serve         --data <dir> --password <pw> --root <path> --group <id>
-                                --expect <peer-fingerprint> [--port 47800] [--root-id root-1]
+                                --expect <fingerprint[,fingerprint]> [--port 47800] [--root-id root-1]
                                 [--interval 0] [--debounce 30] [--peer <host:port:fingerprint>]...
                   sync          --data <dir> --password <pw> --root <path> --group <id>
                                 --peer <host:port:fingerprint> [--root-id root-1] [--wait 3]
@@ -320,7 +331,19 @@ public final class ItemSyncCli {
 
                 The --password value protects the local identity keystore (identity.p12),
                 not an account. It can also be supplied via ITEMS_SYNC_PASSWORD.
+                Peer fingerprints from --peer are trusted automatically.
                 """);
+    }
+
+    private static Set<String> parseFingerprints(String raw) {
+        Set<String> fingerprints = new LinkedHashSet<>();
+        for (String part : raw.split(",")) {
+            String value = part.trim();
+            if (!value.isEmpty()) {
+                fingerprints.add(value);
+            }
+        }
+        return fingerprints;
     }
 
     private static Path dataDirectory(CliArguments arguments) throws IOException {
