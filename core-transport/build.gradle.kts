@@ -19,6 +19,7 @@ dependencies {
     implementation(libs.bcpkix)
     implementation(libs.bcprov)
     implementation(libs.gson)
+    implementation(libs.jmdns)
 
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
