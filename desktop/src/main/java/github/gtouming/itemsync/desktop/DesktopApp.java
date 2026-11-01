@@ -1,0 +1,377 @@
+package github.gtouming.itemsync.desktop;
+
+import github.gtouming.itemsync.platform.desktop.PathSupport;
+import github.gtouming.itemsync.platform.desktop.WindowsAutostart;
+import javafx.application.Application;
+import javafx.application.Platform;
+import javafx.geometry.Insets;
+import javafx.scene.Scene;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.ButtonBar;
+import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckBox;
+import javafx.scene.control.Dialog;
+import javafx.scene.control.Label;
+import javafx.scene.control.PasswordField;
+import javafx.scene.control.Tooltip;
+import javafx.scene.layout.GridPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.VBox;
+import javafx.stage.Stage;
+
+import java.awt.AWTException;
+import java.awt.Color;
+import java.awt.Desktop;
+import java.awt.Graphics2D;
+import java.awt.MenuItem;
+import java.awt.PopupMenu;
+import java.awt.SystemTray;
+import java.awt.TrayIcon;
+import java.awt.image.BufferedImage;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+
+public final class DesktopApp extends Application {
+
+    private DesktopConfig config;
+    private DesktopService service;
+    private ScheduledExecutorService statusScheduler;
+    private ExecutorService worker;
+    private TrayIcon trayIcon;
+    private volatile boolean exiting;
+
+    private final Label nodeLabel = new Label();
+    private final Label rootLabel = new Label();
+    private final Label peersLabel = new Label();
+    private final Label fingerprintLabel = new Label();
+    private final Label lastRunLabel = new Label();
+    private final Label conflictLabel = new Label();
+    private final Label errorLabel = new Label();
+    private Button syncButton;
+
+    @Override
+    public void start(Stage stage) {
+        Platform.setImplicitExit(false);
+        Path dataDir = parseDataDir(getParameters().getRaw());
+        if (dataDir == null) {
+            showError("用法: ItemSync --data <目录>");
+            Platform.exit();
+            return;
+        }
+        Path configFile = dataDir.resolve(DesktopConfig.FILE_NAME);
+        if (!Files.isRegularFile(configFile)) {
+            try {
+                DesktopConfig.writeTemplate(dataDir);
+                showInfo("已生成配置模板：\n" + configFile
+                        + "\n\n请填写 root、group、expect、peers 后重新启动。");
+            } catch (IOException e) {
+                showError("缺少配置文件且无法生成模板: " + e.getMessage());
+            }
+            Platform.exit();
+            return;
+        }
+        try {
+            config = DesktopConfig.load(dataDir);
+        } catch (Exception e) {
+            showError("读取配置失败: " + e.getMessage());
+            Platform.exit();
+            return;
+        }
+        String password = password(dataDir);
+        if (password == null) {
+            Platform.exit();
+            return;
+        }
+        try {
+            service = DesktopService.open(config, password.toCharArray());
+        } catch (Exception e) {
+            showError("启动失败: " + e.getMessage());
+            Platform.exit();
+            return;
+        }
+
+        worker = Executors.newSingleThreadExecutor(runnable -> daemon(runnable, "itemsync-desktop-worker"));
+        statusScheduler = Executors.newSingleThreadScheduledExecutor(
+                runnable -> daemon(runnable, "itemsync-desktop-status"));
+
+        syncButton = new Button("立即同步");
+        Button refreshButton = new Button("刷新");
+        Button openDataButton = new Button("打开数据目录");
+        Button hideButton = new Button("隐藏到托盘");
+        Button exitButton = new Button("退出");
+        CheckBox autostart = new CheckBox("开机自启");
+
+        GridPane grid = new GridPane();
+        grid.setHgap(12);
+        grid.setVgap(8);
+        grid.add(new Label("节点"), 0, 0);
+        grid.add(nodeLabel, 1, 0);
+        grid.add(new Label("同步根"), 0, 1);
+        grid.add(rootLabel, 1, 1);
+        grid.add(new Label("邻居"), 0, 2);
+        grid.add(peersLabel, 1, 2);
+        grid.add(new Label("本机指纹"), 0, 3);
+        fingerprintLabel.setWrapText(true);
+        grid.add(fingerprintLabel, 1, 3);
+        grid.add(new Label("最近运行"), 0, 4);
+        grid.add(lastRunLabel, 1, 4);
+
+        conflictLabel.setStyle("-fx-text-fill: #9a6700;");
+        errorLabel.setStyle("-fx-text-fill: #b00020;");
+        errorLabel.setWrapText(true);
+
+        HBox buttons = new HBox(8, syncButton, refreshButton, openDataButton, hideButton, exitButton);
+        VBox root = new VBox(16, grid, conflictLabel, errorLabel, buttons, autostart);
+        root.setPadding(new Insets(20));
+
+        stage.setScene(new Scene(root, 660, 430));
+        stage.setTitle("ItemSync");
+        stage.setOnCloseRequest(event -> {
+            if (!exiting) {
+                event.consume();
+                stage.hide();
+            }
+        });
+        stage.show();
+
+        syncButton.setOnAction(event -> syncAsync());
+        refreshButton.setOnAction(event -> refreshAsync());
+        openDataButton.setOnAction(event -> openData());
+        hideButton.setOnAction(event -> stage.hide());
+        exitButton.setOnAction(event -> exit(stage));
+
+        configureAutostart(autostart);
+        installTray(stage);
+
+        refreshAsync();
+        statusScheduler.scheduleWithFixedDelay(this::queryStatus, 2, 2, TimeUnit.SECONDS);
+    }
+
+    @Override
+    public void stop() {
+        closeResources();
+    }
+
+    private void syncAsync() {
+        if (syncButton != null) {
+            syncButton.setDisable(true);
+        }
+        worker.submit(() -> {
+            try {
+                service.syncNow();
+            } catch (IOException e) {
+                Platform.runLater(() -> errorLabel.setText("同步失败: " + e.getMessage()));
+            } finally {
+                Platform.runLater(() -> {
+                    if (syncButton != null) {
+                        syncButton.setDisable(false);
+                    }
+                    refreshAsync();
+                });
+            }
+        });
+    }
+
+    private void refreshAsync() {
+        statusScheduler.execute(this::queryStatus);
+    }
+
+    private void queryStatus() {
+        try {
+            DesktopService.Status status = service.status();
+            Platform.runLater(() -> render(status));
+        } catch (RuntimeException e) {
+            Platform.runLater(() -> errorLabel.setText("状态读取失败: " + e.getMessage()));
+        }
+    }
+
+    private void render(DesktopService.Status status) {
+        nodeLabel.setText(status.nodeId().value() + "  (port " + status.port() + ")");
+        rootLabel.setText(status.root().toString());
+        peersLabel.setText(Integer.toString(status.peers()));
+        fingerprintLabel.setText(status.fingerprint());
+        if (status.lastRun() == null) {
+            lastRunLabel.setText("尚未同步");
+        } else {
+            lastRunLabel.setText(status.lastRun().state() + "  " + status.lastRun().statsJson());
+        }
+        conflictLabel.setText("未解决冲突: " + status.openConflicts());
+        errorLabel.setText(status.lastError() == null
+                ? ""
+                : "最近错误: " + status.lastError().getMessage());
+    }
+
+    private void configureAutostart(CheckBox checkBox) {
+        if (!WindowsAutostart.isSupported()) {
+            checkBox.setDisable(true);
+            checkBox.setTooltip(new Tooltip("仅 Windows 支持"));
+            return;
+        }
+        try {
+            checkBox.setSelected(WindowsAutostart.isEnabled());
+        } catch (IOException ignored) {
+            // the registry may be unreadable; leave the checkbox off
+        }
+        boolean configurable = config.launchCommand() != null && !config.launchCommand().isBlank();
+        checkBox.setDisable(!configurable);
+        if (!configurable) {
+            checkBox.setTooltip(new Tooltip("在 desktop.properties 中配置 launch-command"));
+        }
+        checkBox.setOnAction(event -> {
+            try {
+                if (checkBox.isSelected()) {
+                    WindowsAutostart.enable(config.launchCommand());
+                } else {
+                    WindowsAutostart.disable();
+                }
+            } catch (Exception e) {
+                checkBox.setSelected(!checkBox.isSelected());
+                showError("设置开机自启失败: " + e.getMessage());
+            }
+        });
+    }
+
+    private void installTray(Stage stage) {
+        if (!SystemTray.isSupported()) {
+            return;
+        }
+        BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D graphics = image.createGraphics();
+        graphics.setColor(new Color(45, 108, 223));
+        graphics.fillRoundRect(0, 0, 16, 16, 4, 4);
+        graphics.dispose();
+
+        trayIcon = new TrayIcon(image, "ItemSync");
+        trayIcon.setImageAutoSize(true);
+        PopupMenu menu = new PopupMenu();
+        MenuItem open = new MenuItem("打开");
+        MenuItem sync = new MenuItem("立即同步");
+        MenuItem exit = new MenuItem("退出");
+        open.addActionListener(event -> Platform.runLater(stage::show));
+        sync.addActionListener(event -> Platform.runLater(this::syncAsync));
+        exit.addActionListener(event -> Platform.runLater(() -> exit(stage)));
+        menu.add(open);
+        menu.add(sync);
+        menu.addSeparator();
+        menu.add(exit);
+        trayIcon.setPopupMenu(menu);
+        trayIcon.addActionListener(event -> Platform.runLater(stage::show));
+        try {
+            SystemTray.getSystemTray().add(trayIcon);
+        } catch (AWTException e) {
+            trayIcon = null;
+        }
+    }
+
+    private void openData() {
+        try {
+            Desktop.getDesktop().open(config.dataDir().toFile());
+        } catch (Exception e) {
+            showError("无法打开目录: " + e.getMessage());
+        }
+    }
+
+    private void exit(Stage stage) {
+        exiting = true;
+        closeResources();
+        stage.close();
+        Platform.exit();
+        System.exit(0);
+    }
+
+    private void closeResources() {
+        if (statusScheduler != null) {
+            statusScheduler.shutdownNow();
+        }
+        if (worker != null) {
+            worker.shutdownNow();
+        }
+        if (service != null) {
+            service.close();
+            service = null;
+        }
+        if (trayIcon != null && SystemTray.isSupported()) {
+            try {
+                SystemTray.getSystemTray().remove(trayIcon);
+            } catch (RuntimeException ignored) {
+                // the tray may already be gone
+            }
+            trayIcon = null;
+        }
+    }
+
+    private String password(Path dataDir) {
+        String fromEnvironment = System.getenv("ITEMS_SYNC_PASSWORD");
+        if (fromEnvironment != null && !fromEnvironment.isEmpty()) {
+            return fromEnvironment;
+        }
+
+        boolean firstRun = !Files.isRegularFile(dataDir.resolve("identity.p12"));
+        Dialog<String> dialog = new Dialog<>();
+        dialog.setTitle("ItemSync");
+        dialog.setHeaderText(firstRun ? "设置本机身份密钥口令（首次运行）" : "输入本机身份密钥口令");
+
+        PasswordField field = new PasswordField();
+        Label hint = new Label(firstRun
+                ? "将创建本机身份证书与私钥，并用该口令加密保存在 identity.p12。\n"
+                + "它不是账号密码，不会通过网络传输；请牢记，忘记后只能重新初始化并重新配对。"
+                : "用于解锁 identity.p12 中的本机证书与私钥。\n"
+                + "它不是账号密码，不会通过网络传输。");
+        hint.setWrapText(true);
+        hint.setMaxWidth(380);
+        VBox content = new VBox(10, field, hint);
+        dialog.getDialogPane().setContent(content);
+        ButtonType ok = new ButtonType("确定", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
+        dialog.setResultConverter(button -> button == ok ? field.getText() : null);
+
+        Optional<String> result = dialog.showAndWait();
+        if (result.isEmpty() || result.get().isEmpty()) {
+            return null;
+        }
+        return result.get();
+    }
+
+    private void showError(String message) {
+        Alert alert = new Alert(Alert.AlertType.ERROR, message, ButtonType.OK);
+        alert.setTitle("ItemSync");
+        alert.setHeaderText(null);
+        alert.showAndWait();
+    }
+
+    private void showInfo(String message) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION, message, ButtonType.OK);
+        alert.setTitle("ItemSync");
+        alert.setHeaderText(null);
+        alert.showAndWait();
+    }
+
+    private static Path parseDataDir(List<String> args) {
+        for (int i = 0; i < args.size(); i++) {
+            if ("--data".equals(args.get(i)) && i + 1 < args.size()) {
+                Path data = PathSupport.expandUser(args.get(i + 1)).toAbsolutePath();
+                try {
+                    Files.createDirectories(data);
+                } catch (IOException e) {
+                    return null;
+                }
+                return data;
+            }
+        }
+        return null;
+    }
+
+    private static Thread daemon(Runnable runnable, String name) {
+        Thread thread = new Thread(runnable, name);
+        thread.setDaemon(true);
+        return thread;
+    }
+}

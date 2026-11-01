@@ -1,0 +1,202 @@
+package github.gtouming.itemsync.desktop;
+
+import github.gtouming.itemsync.domain.identity.DeviceId;
+import github.gtouming.itemsync.domain.identity.NodeId;
+import github.gtouming.itemsync.domain.model.SyncRun;
+import github.gtouming.itemsync.domain.model.Trigger;
+import github.gtouming.itemsync.platform.desktop.NioDirectoryWatcher;
+import github.gtouming.itemsync.platform.desktop.ProcessWatcher;
+import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
+import github.gtouming.itemsync.store.metadata.jdbc.JdbcMetadataStore;
+import github.gtouming.itemsync.sync.apply.PathResolvers;
+import github.gtouming.itemsync.sync.apply.PhysicalPathResolver;
+import github.gtouming.itemsync.sync.engine.SyncRunResult;
+import github.gtouming.itemsync.sync.engine.node.SyncNode;
+import github.gtouming.itemsync.sync.trigger.TriggerConfig;
+import github.gtouming.itemsync.sync.trigger.TriggerConfigCodec;
+import github.gtouming.itemsync.sync.trigger.TriggerEngine;
+import github.gtouming.itemsync.transport.tls.TlsIdentity;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.function.Consumer;
+
+public final class DesktopService implements AutoCloseable {
+
+    private final DesktopConfig config;
+    private final TlsIdentity identity;
+    private final JdbcMetadataStore store;
+    private final SyncNode node;
+    private final TriggerEngine triggerEngine;
+    private final List<AutoCloseable> watchers;
+
+    private DesktopService(DesktopConfig config, TlsIdentity identity, JdbcMetadataStore store,
+                           SyncNode node, TriggerEngine triggerEngine, List<AutoCloseable> watchers) {
+        this.config = config;
+        this.identity = identity;
+        this.store = store;
+        this.node = node;
+        this.triggerEngine = triggerEngine;
+        this.watchers = watchers;
+    }
+
+    public static DesktopService open(DesktopConfig config, char[] password) throws Exception {
+        Objects.requireNonNull(config, "config");
+        Objects.requireNonNull(password, "password");
+
+        TlsIdentity identity = ensureIdentity(config.dataDir(), password);
+        NodeId nodeId = NodeId.of(read(config.dataDir().resolve("node-id"), "node id"));
+        DeviceId deviceId = DeviceId.of(read(config.dataDir().resolve("device-id"), "device id"));
+        Files.createDirectories(config.root());
+
+        JdbcMetadataStore store = openStore(config.dataDir());
+        SyncNode node;
+        try {
+            node = new SyncNode(nodeId, config.group(), config.rootId(), config.root(), store,
+                    new FileSystemBlobStore(config.dataDir()), resolver(), identity, deviceId,
+                    config.expectedClientFingerprint(), config.port(),
+                    config.dataDir().resolve("transfer"));
+            for (DesktopConfig.PeerTarget peer : config.peers()) {
+                addPeer(node, peer);
+            }
+        } catch (Exception e) {
+            store.close();
+            throw e;
+        }
+
+        TriggerEngine engine = new TriggerEngine(store, config.group(), config.rootId(), nodeId,
+                node::syncNow, node::runSerialized, Instant::now, config.debounce());
+        List<AutoCloseable> watchers = new ArrayList<>();
+        try {
+            List<Trigger> triggers = store.triggers().findByGroup(config.group());
+            engine.registerAll(triggers);
+            for (Trigger trigger : triggers) {
+                if (!trigger.enabled()) {
+                    continue;
+                }
+                TriggerConfig triggerConfig = TriggerConfigCodec.decode(trigger.configJson());
+                if (triggerConfig instanceof TriggerConfig.DirectoryChange) {
+                    watchers.add(new NioDirectoryWatcher(config.root(),
+                            path -> engine.onDirectoryChanged(trigger.id())));
+                } else if (triggerConfig instanceof TriggerConfig.ProcessEvent process) {
+                    Consumer<String> callback = executable -> engine.onProcessEvent(trigger.id());
+                    watchers.add(new ProcessWatcher(process.executables(), callback, callback,
+                            Duration.ofSeconds(2)));
+                }
+            }
+        } catch (Exception e) {
+            watchers.forEach(DesktopService::closeQuietly);
+            engine.close();
+            node.close();
+            store.close();
+            throw e;
+        }
+
+        return new DesktopService(config, identity, store, node, engine, List.copyOf(watchers));
+    }
+
+    public List<SyncRunResult> syncNow() throws IOException {
+        return node.syncNow();
+    }
+
+    public Status status() {
+        return node.readSerialized(() -> {
+            SyncRun lastRun = store.runs().recent(config.rootId(), 1).stream()
+                    .findFirst()
+                    .orElse(null);
+            int conflicts = store.conflicts().findOpen(1000).size();
+            IOException error = node.lastError() != null ? node.lastError() : triggerEngine.lastError();
+            return new Status(node.nodeId(), identity.fingerprint(), node.port(), config.root(),
+                    config.peers().size(), lastRun, conflicts, error);
+        });
+    }
+
+    @Override
+    public void close() {
+        watchers.forEach(DesktopService::closeQuietly);
+        triggerEngine.close();
+        node.close();
+        store.close();
+    }
+
+    public record Status(NodeId nodeId, String fingerprint, int port, Path root, int peers,
+                         SyncRun lastRun, int openConflicts, IOException lastError) {
+    }
+
+    private static TlsIdentity ensureIdentity(Path dataDir, char[] password) throws IOException {
+        Path identityFile = dataDir.resolve("identity.p12");
+        TlsIdentity identity;
+        if (Files.isRegularFile(identityFile)) {
+            identity = TlsIdentity.load(identityFile, password);
+        } else {
+            identity = TlsIdentity.generate("itemsync", password);
+            identity.save(identityFile);
+        }
+        ensureId(dataDir.resolve("node-id"));
+        ensureId(dataDir.resolve("device-id"));
+        return identity;
+    }
+
+    private static void ensureId(Path file) throws IOException {
+        if (!Files.isRegularFile(file)) {
+            Files.writeString(file, UUID.randomUUID().toString());
+        }
+    }
+
+    private static void addPeer(SyncNode node, DesktopConfig.PeerTarget peer) throws IOException {
+        NodeId peerNodeId = NodeId.of("peer-" + peer.fingerprint().substring(0,
+                Math.min(8, peer.fingerprint().length())));
+        IOException lastFailure = null;
+        for (int attempt = 0; attempt < 10; attempt++) {
+            try {
+                node.addPeer(peerNodeId, peer.host(), peer.port(), peer.fingerprint());
+                return;
+            } catch (IOException e) {
+                lastFailure = e;
+                try {
+                    Thread.sleep(500);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw e;
+                }
+            }
+        }
+        throw lastFailure;
+    }
+
+    private static JdbcMetadataStore openStore(Path dataDir) throws Exception {
+        Path dbDirectory = dataDir.resolve("db");
+        Files.createDirectories(dbDirectory);
+        return JdbcMetadataStore.open(
+                "jdbc:sqlite:" + dbDirectory.resolve("itemsync.sqlite").toAbsolutePath());
+    }
+
+    private static PhysicalPathResolver resolver() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        return os.contains("win") ? PathResolvers.windows() : PathResolvers.posix();
+    }
+
+    private static String read(Path file, String description) throws IOException {
+        if (!Files.isRegularFile(file)) {
+            throw new IllegalStateException(
+                    description + " not found, run itemsync-cli init first: " + file);
+        }
+        return Files.readString(file).trim();
+    }
+
+    private static void closeQuietly(AutoCloseable closeable) {
+        try {
+            closeable.close();
+        } catch (Exception ignored) {
+            // closing is best effort
+        }
+    }
+}

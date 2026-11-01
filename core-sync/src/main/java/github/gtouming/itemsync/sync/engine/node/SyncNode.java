@@ -165,6 +165,15 @@ public final class SyncNode implements AutoCloseable {
         }
     }
 
+    public <T> T readSerialized(java.util.function.Supplier<T> work) {
+        syncLock.lock();
+        try {
+            return work.get();
+        } finally {
+            syncLock.unlock();
+        }
+    }
+
     @Override
     public void close() {
         for (PeerLink link : List.copyOf(peers.values())) {
