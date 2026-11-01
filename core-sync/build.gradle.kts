@@ -17,6 +17,7 @@ dependencies {
     api(project(":core-domain"))
     api(project(":core-store"))
     api(project(":core-transport"))
+    implementation(libs.gson)
 
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.sqlite.jdbc)

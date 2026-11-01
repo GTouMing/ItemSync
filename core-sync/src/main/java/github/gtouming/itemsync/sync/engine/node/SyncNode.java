@@ -19,6 +19,7 @@ import github.gtouming.itemsync.sync.engine.transport.RemoteSyncServer;
 import github.gtouming.itemsync.sync.engine.transport.TlsRemotePeer;
 import github.gtouming.itemsync.sync.plan.SyncPlanner;
 import github.gtouming.itemsync.sync.state.LocalReconciler;
+import github.gtouming.itemsync.sync.trigger.TriggerEngine;
 import github.gtouming.itemsync.transport.frame.Frame;
 import github.gtouming.itemsync.transport.frame.FramePayloads;
 import github.gtouming.itemsync.transport.frame.FrameType;
@@ -150,6 +151,15 @@ public final class SyncNode implements AutoCloseable {
                 }
             }
             return List.copyOf(results.values());
+        } finally {
+            syncLock.unlock();
+        }
+    }
+
+    public List<SyncRunResult> runSerialized(TriggerEngine.SyncRunner work) throws IOException {
+        syncLock.lock();
+        try {
+            return work.run();
         } finally {
             syncLock.unlock();
         }
