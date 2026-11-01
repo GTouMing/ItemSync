@@ -29,10 +29,15 @@ public final class TlsTransportServer implements AutoCloseable {
 
     public TlsTransportServer(TlsIdentity identity, String expectedClientFingerprint,
                               int port, FrameHandler handler) throws IOException {
+        this(identity, Set.of(expectedClientFingerprint), port, handler);
+    }
+
+    public TlsTransportServer(TlsIdentity identity, Set<String> expectedClientFingerprints,
+                              int port, FrameHandler handler) throws IOException {
         Objects.requireNonNull(identity, "identity");
         this.handler = Objects.requireNonNull(handler, "handler");
         SSLServerSocket socket = (SSLServerSocket) identity
-                .sslContext(expectedClientFingerprint)
+                .sslContext(expectedClientFingerprints)
                 .getServerSocketFactory()
                 .createServerSocket(port);
         socket.setNeedClientAuth(true);

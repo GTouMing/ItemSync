@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -51,6 +52,20 @@ class TlsIdentityTest {
 
         assertThrows(CertificateException.class,
                 () -> trustManager.checkServerTrusted(new X509Certificate[] {bob.certificate()}, "RSA"));
+    }
+
+    @Test
+    void pinnedTrustManagerAcceptsAnyPinnedFingerprint() throws Exception {
+        PinnedTrustManager trustManager = new PinnedTrustManager(
+                Set.of(alice.fingerprint(), bob.fingerprint()));
+
+        trustManager.checkClientTrusted(new X509Certificate[] {alice.certificate()}, "RSA");
+        trustManager.checkClientTrusted(new X509Certificate[] {bob.certificate()}, "RSA");
+
+        TlsIdentity carol = TlsIdentity.generate("carol");
+        assertThrows(CertificateException.class,
+                () -> trustManager.checkClientTrusted(
+                        new X509Certificate[] {carol.certificate()}, "RSA"));
     }
 
     @Test

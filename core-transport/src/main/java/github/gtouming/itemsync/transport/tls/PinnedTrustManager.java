@@ -5,17 +5,31 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 public final class PinnedTrustManager implements X509TrustManager {
 
-    private final String expectedFingerprint;
+    private final Set<String> expectedFingerprints;
 
     public PinnedTrustManager(String expectedFingerprint) {
-        Objects.requireNonNull(expectedFingerprint, "expectedFingerprint");
-        if (expectedFingerprint.isBlank()) {
-            throw new IllegalArgumentException("expected fingerprint must not be blank");
+        this(Set.of(expectedFingerprint));
+    }
+
+    public PinnedTrustManager(Set<String> expectedFingerprints) {
+        Objects.requireNonNull(expectedFingerprints, "expectedFingerprints");
+        if (expectedFingerprints.isEmpty()) {
+            throw new IllegalArgumentException("expected fingerprints must not be empty");
         }
-        this.expectedFingerprint = expectedFingerprint.toLowerCase(Locale.ROOT);
+        this.expectedFingerprints = expectedFingerprints.stream()
+                .map(fingerprint -> {
+                    Objects.requireNonNull(fingerprint, "fingerprint");
+                    if (fingerprint.isBlank()) {
+                        throw new IllegalArgumentException("expected fingerprint must not be blank");
+                    }
+                    return fingerprint.toLowerCase(Locale.ROOT);
+                })
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     @Override
@@ -40,9 +54,10 @@ public final class PinnedTrustManager implements X509TrustManager {
         X509Certificate leaf = chain[0];
         leaf.checkValidity();
         String actual = TlsIdentity.fingerprint(leaf);
-        if (!actual.equals(expectedFingerprint)) {
+        if (!expectedFingerprints.contains(actual)) {
             throw new CertificateException(
-                    "certificate fingerprint mismatch: expected " + expectedFingerprint + ", got " + actual);
+                    "certificate fingerprint mismatch: expected one of "
+                            + expectedFingerprints + ", got " + actual);
         }
     }
 }

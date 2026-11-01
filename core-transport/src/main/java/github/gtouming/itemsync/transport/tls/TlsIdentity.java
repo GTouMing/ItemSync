@@ -36,6 +36,7 @@ import java.util.Date;
 import java.util.Enumeration;
 import java.util.HexFormat;
 import java.util.Objects;
+import java.util.Set;
 
 public final class TlsIdentity {
 
@@ -149,7 +150,11 @@ public final class TlsIdentity {
     }
 
     public SSLContext sslContext(String expectedPeerFingerprint) {
-        Objects.requireNonNull(expectedPeerFingerprint, "expectedPeerFingerprint");
+        return sslContext(Set.of(expectedPeerFingerprint));
+    }
+
+    public SSLContext sslContext(Set<String> expectedPeerFingerprints) {
+        Objects.requireNonNull(expectedPeerFingerprints, "expectedPeerFingerprints");
         try {
             KeyManagerFactory keyManagerFactory =
                     KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
@@ -157,7 +162,7 @@ public final class TlsIdentity {
             SSLContext context = SSLContext.getInstance(PROTOCOL);
             context.init(
                     keyManagerFactory.getKeyManagers(),
-                    new TrustManager[] {new PinnedTrustManager(expectedPeerFingerprint)},
+                    new TrustManager[] {new PinnedTrustManager(expectedPeerFingerprints)},
                     new SecureRandom());
             return context;
         } catch (GeneralSecurityException e) {
