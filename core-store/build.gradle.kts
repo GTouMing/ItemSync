@@ -17,6 +17,7 @@ dependencies {
     api(project(":core-domain"))
 
     testImplementation(libs.junit.jupiter)
+    testImplementation(libs.sqlite.jdbc)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
