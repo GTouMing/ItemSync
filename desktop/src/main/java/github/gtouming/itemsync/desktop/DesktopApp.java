@@ -219,15 +219,19 @@ public final class DesktopApp extends Application {
         } catch (IOException ignored) {
             // the registry may be unreadable; leave the checkbox off
         }
-        boolean configurable = config.launchCommand() != null && !config.launchCommand().isBlank();
-        checkBox.setDisable(!configurable);
-        if (!configurable) {
-            checkBox.setTooltip(new Tooltip("在 desktop.properties 中配置 launch-command"));
+        String command = AutostartCommand.resolve(config.launchCommand(),
+                AutostartCommand.currentExecutable(), config.dataDir());
+        checkBox.setDisable(command == null);
+        if (command == null) {
+            checkBox.setTooltip(new Tooltip(
+                    "需要打包后的 ItemSync.exe，或在 desktop.properties 中配置 launch-command"));
+            return;
         }
+        checkBox.setTooltip(new Tooltip("登录后自动启动 ItemSync"));
         checkBox.setOnAction(event -> {
             try {
                 if (checkBox.isSelected()) {
-                    WindowsAutostart.enable(config.launchCommand());
+                    WindowsAutostart.enable(command);
                 } else {
                     WindowsAutostart.disable();
                 }
