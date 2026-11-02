@@ -8,6 +8,8 @@ import github.gtouming.itemsync.platform.desktop.PathSupport;
 import github.gtouming.itemsync.platform.desktop.WindowsAutostart;
 import github.gtouming.itemsync.sync.state.ConflictResolver;
 import github.gtouming.itemsync.sync.state.VersionHistoryService;
+import github.gtouming.itemsync.sync.trust.PeerTrustCoordinator;
+import github.gtouming.itemsync.sync.trust.RemoteTrust;
 import github.gtouming.itemsync.transport.discovery.PresenceTracker;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 import javafx.application.Application;
@@ -627,7 +629,7 @@ public final class DesktopApp extends Application {
     private void showPeersAsync() {
         worker.submit(() -> {
             try {
-                List<DesktopService.PeerView> peers = service.peerViews();
+                List<PeerTrustCoordinator.PeerView> peers = service.peerViews();
                 Platform.runLater(() -> showPeers(peers));
             } catch (RuntimeException e) {
                 Platform.runLater(() -> showError("读取在线设备失败: " + e.getMessage()));
@@ -635,7 +637,7 @@ public final class DesktopApp extends Application {
         });
     }
 
-    private void showPeers(List<DesktopService.PeerView> peers) {
+    private void showPeers(List<PeerTrustCoordinator.PeerView> peers) {
         if (peers.isEmpty()) {
             showInfo("同组内暂无在线设备");
             return;
@@ -643,12 +645,12 @@ public final class DesktopApp extends Application {
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle("ItemSync");
         dialog.setHeaderText("局域网设备（" + peers.size() + "）");
-        ListView<DesktopService.PeerView> list = new ListView<>();
+        ListView<PeerTrustCoordinator.PeerView> list = new ListView<>();
         list.getItems().setAll(peers);
         list.setPrefHeight(300);
         list.setCellFactory(view -> new ListCell<>() {
             @Override
-            protected void updateItem(DesktopService.PeerView view, boolean empty) {
+            protected void updateItem(PeerTrustCoordinator.PeerView view, boolean empty) {
                 super.updateItem(view, empty);
                 if (empty || view == null) {
                     setText(null);
@@ -691,7 +693,7 @@ public final class DesktopApp extends Application {
         Button revokeButton = (Button) dialog.getDialogPane().lookupButton(revoke);
         Button refreshButton = (Button) dialog.getDialogPane().lookupButton(refreshButtonType);
         Runnable updateButtons = () -> {
-            DesktopService.PeerView selected = list.getSelectionModel().getSelectedItem();
+            PeerTrustCoordinator.PeerView selected = list.getSelectionModel().getSelectedItem();
             pairButton.setDisable(selected == null || selected.locallyTrusted()
                     || !selected.identityVerified());
             revokeButton.setDisable(selected == null || !selected.locallyTrusted());
@@ -705,7 +707,7 @@ public final class DesktopApp extends Application {
             revokeButton.setDisable(true);
             worker.submit(() -> {
                 try {
-                    List<DesktopService.PeerView> refreshed = service.peerViews();
+                    List<PeerTrustCoordinator.PeerView> refreshed = service.peerViews();
                     Platform.runLater(() -> {
                         list.getItems().setAll(refreshed);
                         if (!refreshed.isEmpty()) {
@@ -724,7 +726,7 @@ public final class DesktopApp extends Application {
 
         pairButton.addEventFilter(ActionEvent.ACTION, event -> {
             event.consume();
-            DesktopService.PeerView selected = list.getSelectionModel().getSelectedItem();
+            PeerTrustCoordinator.PeerView selected = list.getSelectionModel().getSelectedItem();
             if (selected == null || !selected.identityVerified() || !confirmPairing(selected)) {
                 return;
             }
@@ -739,7 +741,7 @@ public final class DesktopApp extends Application {
         });
         revokeButton.addEventFilter(ActionEvent.ACTION, event -> {
             event.consume();
-            DesktopService.PeerView selected = list.getSelectionModel().getSelectedItem();
+            PeerTrustCoordinator.PeerView selected = list.getSelectionModel().getSelectedItem();
             if (selected == null) {
                 return;
             }
@@ -758,7 +760,7 @@ public final class DesktopApp extends Application {
         dialog.showAndWait();
     }
 
-    private static String trustState(DesktopService.PeerView view) {
+    private static String trustState(PeerTrustCoordinator.PeerView view) {
         if (!view.locallyTrusted()) {
             return switch (view.remoteTrust()) {
                 case TRUSTED -> "对方已信任你，等待本机确认";
@@ -776,7 +778,7 @@ public final class DesktopApp extends Application {
         };
     }
 
-    private boolean confirmPairing(DesktopService.PeerView view) {
+    private boolean confirmPairing(PeerTrustCoordinator.PeerView view) {
         String code = service.pairingCode(view.presence().peer());
         Dialog<Boolean> dialog = new Dialog<>();
         dialog.setTitle("ItemSync");

@@ -2,6 +2,7 @@ package github.gtouming.itemsync.desktop;
 
 import github.gtouming.itemsync.domain.compat.Compat;
 import github.gtouming.itemsync.domain.identity.GroupId;
+import github.gtouming.itemsync.sync.trust.PeerTrustStore;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -13,7 +14,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Properties;
 
-public final class TrustStore {
+public final class TrustStore implements PeerTrustStore {
 
     private static final String FILE_NAME = "trust.properties";
 

@@ -1,4 +1,4 @@
-package github.gtouming.itemsync.desktop;
+package github.gtouming.itemsync.sync.trust;
 
 import org.junit.jupiter.api.Test;
 

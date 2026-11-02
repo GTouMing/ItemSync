@@ -1,4 +1,4 @@
-package github.gtouming.itemsync.desktop;
+package github.gtouming.itemsync.sync.trust;
 
 import java.time.Duration;
 import java.time.Instant;

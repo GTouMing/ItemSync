@@ -10,7 +10,6 @@ import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.Trigger;
 import github.gtouming.itemsync.platform.desktop.NioDirectoryWatcher;
 import github.gtouming.itemsync.platform.desktop.ProcessWatcher;
-import github.gtouming.itemsync.domain.security.PairingCode;
 import github.gtouming.itemsync.store.blob.BlobStore;
 import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.store.metadata.jdbc.JdbcMetadataStore;
@@ -20,41 +19,29 @@ import github.gtouming.itemsync.sync.engine.SyncRunResult;
 import github.gtouming.itemsync.sync.engine.node.SyncNode;
 import github.gtouming.itemsync.sync.state.ConflictResolver;
 import github.gtouming.itemsync.sync.state.VersionHistoryService;
+import github.gtouming.itemsync.sync.trust.PeerTrustCoordinator;
 import github.gtouming.itemsync.sync.trigger.TriggerConfig;
 import github.gtouming.itemsync.sync.trigger.TriggerConfigCodec;
 import github.gtouming.itemsync.sync.trigger.TriggerEngine;
 import github.gtouming.itemsync.transport.discovery.DiscoveredPeer;
 import github.gtouming.itemsync.transport.discovery.PresenceTracker;
-import github.gtouming.itemsync.transport.pairing.PairingStatusClient;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.net.Inet4Address;
-import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Consumer;
 
 public final class DesktopService implements AutoCloseable {
-
-    private static final Duration REMOTE_TRUST_TTL = Duration.ofSeconds(30);
-    private static final Duration REMOTE_TRUST_FAILURE_TTL = Duration.ofSeconds(5);
-    private static final Duration PAIRING_QUERY_TIMEOUT = Duration.ofSeconds(2);
 
     private final DesktopConfig config;
     private final TlsIdentity identity;
@@ -63,20 +50,13 @@ public final class DesktopService implements AutoCloseable {
     private final TriggerEngine triggerEngine;
     private final ConflictResolver conflictResolver;
     private final VersionHistoryService history;
-    private final TrustStore trustStore;
-    private final Set<String> connectedPeers = ConcurrentHashMap.newKeySet();
-    private final RemoteTrustCache remoteTrustCache = new RemoteTrustCache(Instant::now);
-    private final ExecutorService statusExecutor = Executors.newFixedThreadPool(4, runnable -> {
-        Thread thread = new Thread(runnable, "itemsync-pairing-status");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private final PeerTrustCoordinator peerTrust;
     private final List<AutoCloseable> watchers;
 
     private DesktopService(DesktopConfig config, TlsIdentity identity, JdbcMetadataStore store,
                            SyncNode node, TriggerEngine triggerEngine,
                            ConflictResolver conflictResolver, VersionHistoryService history,
-                           TrustStore trustStore, List<AutoCloseable> watchers) {
+                           PeerTrustCoordinator peerTrust, List<AutoCloseable> watchers) {
         this.config = config;
         this.identity = identity;
         this.store = store;
@@ -84,7 +64,7 @@ public final class DesktopService implements AutoCloseable {
         this.triggerEngine = triggerEngine;
         this.conflictResolver = conflictResolver;
         this.history = history;
-        this.trustStore = trustStore;
+        this.peerTrust = peerTrust;
         this.watchers = watchers;
     }
 
@@ -116,6 +96,8 @@ public final class DesktopService implements AutoCloseable {
             store.close();
             throw e;
         }
+        PeerTrustCoordinator peerTrust = new PeerTrustCoordinator(
+                config.group(), identity, node, trustStore);
 
         ConflictResolver conflictResolver = new ConflictResolver(config.root(), store, physical,
                 config.rootId(), nodeId, Instant::now);
@@ -145,173 +127,59 @@ public final class DesktopService implements AutoCloseable {
         } catch (Exception e) {
             watchers.forEach(DesktopService::closeQuietly);
             engine.close();
+            peerTrust.close();
             node.close();
             store.close();
             throw e;
         }
 
         return new DesktopService(config, identity, store, node, engine, conflictResolver,
-                history, trustStore, List.copyOf(watchers));
+                history, peerTrust, List.copyOf(watchers));
     }
 
     public List<SyncRunResult> syncNow() throws IOException {
-        reconcileTrustedPeers();
+        peerTrust.reconcileTrustedPeers();
         return node.syncNow();
     }
 
     public List<PresenceTracker.Presence> onlinePeers() {
-        List<PresenceTracker.Presence> peers = node.onlinePeers();
-        retainOnlinePeers(peers);
-        for (PresenceTracker.Presence presence : peers) {
-            if (isTrusted(presence.peer())) {
-                try {
-                    connect(presence.peer());
-                } catch (IOException ignored) {
-                    // the peer has not trusted us yet, or is temporarily unreachable
-                }
-            }
-        }
-        return peers;
+        return peerTrust.onlinePeers();
     }
 
-    public List<PeerView> peerViews() {
-        return peerViews(true);
+    public List<PeerTrustCoordinator.PeerView> peerViews() {
+        return peerTrust.peerViews();
     }
 
-    public List<PeerView> peerViews(boolean forceRefresh) {
-        List<PresenceTracker.Presence> peers = onlinePeers();
-        List<CompletableFuture<PeerView>> futures = new ArrayList<>(peers.size());
-        for (PresenceTracker.Presence presence : peers) {
-            futures.add(CompletableFuture.supplyAsync(
-                    () -> viewOf(presence, forceRefresh), statusExecutor));
-        }
-        List<PeerView> views = new ArrayList<>(futures.size());
-        for (CompletableFuture<PeerView> future : futures) {
-            views.add(future.join());
-        }
-        return List.copyOf(views);
-    }
-
-    private PeerView viewOf(PresenceTracker.Presence presence, boolean forceRefresh) {
-        DiscoveredPeer peer = presence.peer();
-        return new PeerView(presence, isTrusted(peer), remoteTrust(peer, forceRefresh),
-                isConnected(peer));
-    }
-
-    private RemoteTrust remoteTrust(DiscoveredPeer peer, boolean forceRefresh) {
-        if (peer.pairingPort() <= 0) {
-            return RemoteTrust.UNKNOWN;
-        }
-        if (!forceRefresh) {
-            var cached = remoteTrustCache.get(peer.fingerprint());
-            if (cached.isPresent()) {
-                return cached.get();
-            }
-        }
-        try {
-            InetAddress address = addressOf(peer);
-            PairingStatusClient.Result result = PairingStatusClient.query(
-                    address.getHostAddress(), peer.pairingPort(), identity, peer.fingerprint(),
-                    config.group(), peer.nodeId(), peer.deviceId(), PAIRING_QUERY_TIMEOUT);
-            RemoteTrust trust = result.response().trustsPeer()
-                    ? RemoteTrust.TRUSTED
-                    : RemoteTrust.UNTRUSTED;
-            remoteTrustCache.put(peer.fingerprint(), trust, REMOTE_TRUST_TTL);
-            return trust;
-        } catch (IOException | RuntimeException e) {
-            remoteTrustCache.put(peer.fingerprint(), RemoteTrust.UNKNOWN,
-                    REMOTE_TRUST_FAILURE_TTL);
-            return RemoteTrust.UNKNOWN;
-        }
+    public List<PeerTrustCoordinator.PeerView> peerViews(boolean forceRefresh) {
+        return peerTrust.peerViews(forceRefresh);
     }
 
     public boolean isTrusted(DiscoveredPeer peer) {
-        return trustStore.isTrusted(config.group(), peer.fingerprint());
+        return peerTrust.isTrusted(peer);
     }
 
     public boolean isConnected(DiscoveredPeer peer) {
-        return connectedPeers.contains(peer.fingerprint().toLowerCase(Locale.ROOT));
+        return peerTrust.isConnected(peer);
     }
 
     public String pairingCode(DiscoveredPeer peer) {
-        return PairingCode.between(config.group(), identity.fingerprint(), peer.fingerprint());
+        return peerTrust.pairingCode(peer);
     }
 
     public void trustPeer(DiscoveredPeer peer) throws IOException {
-        trustStore.trust(config.group(), peer.fingerprint());
-        remoteTrustCache.invalidate(peer.fingerprint());
-        node.allowClient(peer.fingerprint());
-        connect(peer);
+        peerTrust.trustPeer(peer);
     }
 
     public void untrustPeer(DiscoveredPeer peer) throws IOException {
-        trustStore.untrust(config.group(), peer.fingerprint());
-        remoteTrustCache.invalidate(peer.fingerprint());
-        node.revokeClient(peer.fingerprint());
-        node.removePeer(peer.nodeId());
-        connectedPeers.remove(peer.fingerprint().toLowerCase(Locale.ROOT));
+        peerTrust.untrustPeer(peer);
     }
 
     public void reconcileTrustedPeers() {
-        List<PresenceTracker.Presence> peers = node.onlinePeers();
-        retainOnlinePeers(peers);
-        for (PresenceTracker.Presence presence : peers) {
-            if (isTrusted(presence.peer())) {
-                try {
-                    connect(presence.peer());
-                } catch (IOException ignored) {
-                    // retry on the next background pass
-                }
-            }
-        }
+        peerTrust.reconcileTrustedPeers();
     }
 
     public void refreshRemoteTrust() {
-        List<PresenceTracker.Presence> peers = node.onlinePeers();
-        retainOnlinePeers(peers);
-        for (PresenceTracker.Presence presence : peers) {
-            if (presence.peer().pairingPort() <= 0) {
-                continue;
-            }
-            try {
-                statusExecutor.execute(() -> remoteTrust(presence.peer(), false));
-            } catch (RejectedExecutionException ignored) {
-                // service is closing
-            }
-        }
-    }
-
-    private void retainOnlinePeers(List<PresenceTracker.Presence> peers) {
-        Set<String> online = new LinkedHashSet<>();
-        for (PresenceTracker.Presence presence : peers) {
-            online.add(presence.peer().fingerprint().toLowerCase(Locale.ROOT));
-        }
-        connectedPeers.retainAll(online);
-    }
-
-    private void connect(DiscoveredPeer peer) throws IOException {
-        if (!isTrusted(peer)) {
-            return;
-        }
-        String fingerprint = peer.fingerprint().toLowerCase(Locale.ROOT);
-        if (connectedPeers.contains(fingerprint)) {
-            return;
-        }
-        InetAddress address = addressOf(peer);
-        node.allowClient(peer.fingerprint());
-        node.addPeer(peer.nodeId(), address.getHostAddress(), peer.port(), peer.fingerprint());
-        connectedPeers.add(fingerprint);
-    }
-
-    private static InetAddress addressOf(DiscoveredPeer peer) throws IOException {
-        InetAddress address = peer.addresses().stream()
-                .filter(candidate -> candidate instanceof Inet4Address)
-                .findFirst()
-                .orElseGet(() -> peer.addresses().stream().findFirst().orElse(null));
-        if (address == null) {
-            throw new IOException("no address for peer " + peer.deviceId().value());
-        }
-        return address;
+        peerTrust.refreshRemoteTrust();
     }
 
     public List<ConflictResolver.ConflictView> openConflicts() {
@@ -373,17 +241,9 @@ public final class DesktopService implements AutoCloseable {
     public void close() {
         watchers.forEach(DesktopService::closeQuietly);
         triggerEngine.close();
+        peerTrust.close();
         node.close();
-        statusExecutor.shutdownNow();
         store.close();
-    }
-
-    public record PeerView(PresenceTracker.Presence presence, boolean locallyTrusted,
-                           RemoteTrust remoteTrust, boolean connected) {
-
-        public boolean identityVerified() {
-            return remoteTrust != RemoteTrust.UNKNOWN;
-        }
     }
 
     public record Status(NodeId nodeId, String fingerprint, int port, Path root,
