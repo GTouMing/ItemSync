@@ -2,6 +2,8 @@ package github.gtouming.itemsync.transport.frame;
 
 import github.gtouming.itemsync.domain.error.ErrorCode;
 import github.gtouming.itemsync.domain.identity.BlobHash;
+import github.gtouming.itemsync.domain.identity.DeviceId;
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
 import org.junit.jupiter.api.Test;
 
@@ -53,6 +55,31 @@ class FramePayloadsTest {
         ErrorMessage error = new ErrorMessage(ErrorCode.INVALID_REQUEST, "bad request");
 
         assertEquals(error, FramePayloads.decodeError(FramePayloads.encodeError(error)));
+    }
+
+    @Test
+    void roundTripsPairingStatusRequest() {
+        PairingStatusRequest request = new PairingStatusRequest(GroupId.parse("group001"));
+
+        assertEquals(request, FramePayloads.decodePairingStatusRequest(
+                FramePayloads.encodePairingStatusRequest(request)));
+    }
+
+    @Test
+    void roundTripsPairingStatusResponse() {
+        PairingStatusResponse response = new PairingStatusResponse(
+                GroupId.parse("group001"), NodeId.of("node-a"), DeviceId.of("device-a"),
+                "fingerprint", true);
+
+        assertEquals(response, FramePayloads.decodePairingStatusResponse(
+                FramePayloads.encodePairingStatusResponse(response)));
+    }
+
+    @Test
+    void rejectsBlankPairingFingerprint() {
+        assertThrows(IllegalArgumentException.class, () -> new PairingStatusResponse(
+                GroupId.parse("group001"), NodeId.of("node-a"), DeviceId.of("device-a"),
+                "  ", true));
     }
 
     @Test

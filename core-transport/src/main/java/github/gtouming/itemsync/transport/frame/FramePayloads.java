@@ -11,6 +11,7 @@ import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import github.gtouming.itemsync.domain.error.ErrorCode;
 import github.gtouming.itemsync.domain.identity.BlobHash;
+import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
@@ -152,6 +153,36 @@ public final class FramePayloads {
                 SyncRunId.of(string(json, "runId")),
                 bool(json, "accepted"),
                 integer(json, "queuePosition"));
+    }
+
+    public static byte[] encodePairingStatusRequest(PairingStatusRequest request) {
+        JsonObject json = new JsonObject();
+        json.addProperty("groupId", request.groupId().value());
+        return toBytes(json);
+    }
+
+    public static PairingStatusRequest decodePairingStatusRequest(byte[] payload) {
+        return new PairingStatusRequest(GroupId.parse(string(parseObject(payload), "groupId")));
+    }
+
+    public static byte[] encodePairingStatusResponse(PairingStatusResponse response) {
+        JsonObject json = new JsonObject();
+        json.addProperty("groupId", response.groupId().value());
+        json.addProperty("nodeId", response.nodeId().value());
+        json.addProperty("deviceId", response.deviceId().value());
+        json.addProperty("fingerprint", response.fingerprint());
+        json.addProperty("trustsPeer", response.trustsPeer());
+        return toBytes(json);
+    }
+
+    public static PairingStatusResponse decodePairingStatusResponse(byte[] payload) {
+        JsonObject json = parseObject(payload);
+        return new PairingStatusResponse(
+                GroupId.parse(string(json, "groupId")),
+                NodeId.of(string(json, "nodeId")),
+                DeviceId.of(string(json, "deviceId")),
+                string(json, "fingerprint"),
+                bool(json, "trustsPeer"));
     }
 
     public static byte[] encodeManifestRequest(ManifestRequest request) {

@@ -117,8 +117,21 @@ public final class JmDnsPeerDiscovery implements PeerDiscovery {
         properties.put("groupId", advertisement.groupId().value());
         properties.put("protocolVersion", Integer.toString(advertisement.protocolVersion()));
         properties.put("fingerprint", advertisement.fingerprint());
+        properties.put("pairingPort", Integer.toString(advertisement.pairingPort()));
         return ServiceInfo.create(SERVICE_TYPE, advertisement.deviceId().value(),
                 advertisement.port(), 0, 0, properties);
+    }
+
+    static int pairingPort(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return 0;
+        }
+        try {
+            int port = Integer.parseInt(raw.trim());
+            return port >= 0 && port <= 65535 ? port : 0;
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     static DiscoveredPeer toPeer(ServiceInfo info) {
@@ -148,7 +161,8 @@ public final class JmDnsPeerDiscovery implements PeerDiscovery {
                     Integer.parseInt(protocolVersion),
                     fingerprint,
                     addresses,
-                    info.getPort());
+                    info.getPort(),
+                    pairingPort(info.getPropertyString("pairingPort")));
         } catch (RuntimeException e) {
             return null;
         }

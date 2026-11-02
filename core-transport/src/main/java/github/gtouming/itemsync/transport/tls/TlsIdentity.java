@@ -11,6 +11,7 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -157,6 +158,10 @@ public final class TlsIdentity {
     }
 
     public SSLContext sslContext(PinnedTrustManager trustManager) {
+        return sslContext((X509TrustManager) trustManager);
+    }
+
+    public SSLContext sslContext(X509TrustManager trustManager) {
         Objects.requireNonNull(trustManager, "trustManager");
         try {
             KeyManagerFactory keyManagerFactory =

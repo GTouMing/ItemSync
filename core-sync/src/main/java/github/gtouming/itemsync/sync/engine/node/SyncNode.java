@@ -33,6 +33,9 @@ import github.gtouming.itemsync.transport.discovery.PeerAdvertisement;
 import github.gtouming.itemsync.transport.discovery.PresenceTracker;
 import github.gtouming.itemsync.transport.net.FrameConnection;
 import github.gtouming.itemsync.transport.net.TlsTransportServer;
+import github.gtouming.itemsync.transport.pairing.PairingStatusServer;
+import github.gtouming.itemsync.transport.pairing.PairingTrustManager;
+import github.gtouming.itemsync.transport.pairing.PairingTrustProvider;
 import github.gtouming.itemsync.transport.tls.PinnedTrustManager;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
@@ -63,6 +66,8 @@ public final class SyncNode implements AutoCloseable {
     private final SyncEngine engine;
     private final RemoteSyncServer remoteSyncServer;
     private final TlsTransportServer server;
+    private final TlsTransportServer pairingServer;
+    private final int pairingPort;
     private final PinnedTrustManager trustManager;
     private final PresenceTracker presence;
     private final JmDnsPeerDiscovery discovery;
@@ -92,6 +97,15 @@ public final class SyncNode implements AutoCloseable {
                     MetadataStore store, BlobStore blobs, PhysicalPathResolver paths,
                     TlsIdentity identity, DeviceId deviceId, Set<String> expectedClientFingerprints,
                     int port, Path transferTempDir) throws IOException {
+        this(nodeId, groupId, rootId, syncRoot, store, blobs, paths, identity, deviceId,
+                expectedClientFingerprints, port, transferTempDir, null);
+    }
+
+    public SyncNode(NodeId nodeId, GroupId groupId, SyncRootId rootId, Path syncRoot,
+                    MetadataStore store, BlobStore blobs, PhysicalPathResolver paths,
+                    TlsIdentity identity, DeviceId deviceId, Set<String> expectedClientFingerprints,
+                    int port, Path transferTempDir, PairingTrustProvider pairingTrust)
+            throws IOException {
         this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
         this.groupId = Objects.requireNonNull(groupId, "groupId");
         this.rootId = Objects.requireNonNull(rootId, "rootId");
@@ -123,6 +137,26 @@ public final class SyncNode implements AutoCloseable {
         this.server.start();
         this.transferTempDir = tempDir;
 
+        TlsTransportServer pairing = null;
+        int pairingPort = 0;
+        if (pairingTrust != null) {
+            try {
+                pairing = new TlsTransportServer(identity, new PairingTrustManager(), 0,
+                        new PairingStatusServer(groupId, nodeId, deviceId,
+                                identity.fingerprint(), pairingTrust));
+                pairing.start();
+                pairingPort = pairing.port();
+            } catch (IOException | RuntimeException e) {
+                if (pairing != null) {
+                    pairing.close();
+                }
+                pairing = null;
+                pairingPort = 0;
+            }
+        }
+        this.pairingServer = pairing;
+        this.pairingPort = pairingPort;
+
         PresenceTracker presenceTracker = new PresenceTracker(groupId, nodeId, Instant::now);
         JmDnsPeerDiscovery peerDiscovery = null;
         try {
@@ -130,7 +164,8 @@ public final class SyncNode implements AutoCloseable {
             peerDiscovery.addListener(presenceTracker);
             peerDiscovery.start();
             peerDiscovery.advertise(new PeerAdvertisement(nodeId, deviceId, groupId,
-                    FrameCodec.PROTOCOL_VERSION, identity.fingerprint(), server.port()));
+                    FrameCodec.PROTOCOL_VERSION, identity.fingerprint(), server.port(),
+                    pairingPort));
         } catch (IOException | RuntimeException e) {
             if (peerDiscovery != null) {
                 peerDiscovery.close();
@@ -164,6 +199,10 @@ public final class SyncNode implements AutoCloseable {
 
     public int port() {
         return server.port();
+    }
+
+    public int pairingPort() {
+        return pairingPort;
     }
 
     public NodeId nodeId() {
@@ -246,6 +285,9 @@ public final class SyncNode implements AutoCloseable {
         peersByFingerprint.clear();
         if (discovery != null) {
             discovery.close();
+        }
+        if (pairingServer != null) {
+            pairingServer.close();
         }
         server.close();
         worker.shutdownNow();
