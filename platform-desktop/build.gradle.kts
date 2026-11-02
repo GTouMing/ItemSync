@@ -14,6 +14,10 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 dependencies {
+    implementation(project(":core-domain"))
+    implementation(libs.jna)
+    implementation(libs.jna.platform)
+
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
