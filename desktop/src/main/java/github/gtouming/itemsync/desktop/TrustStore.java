@@ -44,6 +44,20 @@ public final class TrustStore {
         }
     }
 
+    public synchronized void retainOnly(GroupId group) throws IOException {
+        String prefix = group.value() + "|";
+        var stale = new java.util.ArrayList<String>();
+        for (String key : entries.stringPropertyNames()) {
+            if (!key.startsWith(prefix)) {
+                stale.add(key);
+            }
+        }
+        if (!stale.isEmpty()) {
+            stale.forEach(entries::remove);
+            save();
+        }
+    }
+
     private void save() throws IOException {
         Files.createDirectories(file.getParent());
         Path temp = Files.createTempFile(file.getParent(), ".trust-", ".tmp");

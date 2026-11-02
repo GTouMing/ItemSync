@@ -650,12 +650,17 @@ public final class DesktopApp extends Application {
                     addresses.append(address.getHostAddress());
                 }
                 setWrapText(true);
+                String state = !service.isTrusted(presence.peer())
+                        ? "未信任"
+                        : service.isConnected(presence.peer())
+                        ? "已信任（已连接）"
+                        : "已信任（等待对方信任）";
                 setText(presence.peer().deviceId().value()
                         + "\n地址: " + (addresses.length() == 0 ? "未知" : addresses)
                         + "  端口: " + presence.peer().port()
                         + "\n指纹: " + presence.peer().fingerprint()
                         + "\n最近在线: " + presence.lastSeen()
-                        + "\n状态: " + (service.isTrusted(presence.peer()) ? "已信任" : "未信任"));
+                        + "\n状态: " + state);
             }
         });
         list.getSelectionModel().selectFirst();
@@ -666,8 +671,9 @@ public final class DesktopApp extends Application {
 
         ButtonType pair = new ButtonType("信任 / 配对", ButtonBar.ButtonData.OTHER);
         ButtonType revoke = new ButtonType("撤销信任", ButtonBar.ButtonData.OTHER);
+        ButtonType refreshButtonType = new ButtonType("刷新", ButtonBar.ButtonData.OTHER);
         ButtonType close = new ButtonType("关闭", ButtonBar.ButtonData.CANCEL_CLOSE);
-        dialog.getDialogPane().getButtonTypes().addAll(pair, revoke, close);
+        dialog.getDialogPane().getButtonTypes().addAll(pair, revoke, refreshButtonType, close);
         VBox content = new VBox(10, list, hint);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
@@ -675,6 +681,7 @@ public final class DesktopApp extends Application {
 
         Button pairButton = (Button) dialog.getDialogPane().lookupButton(pair);
         Button revokeButton = (Button) dialog.getDialogPane().lookupButton(revoke);
+        Button refreshButton = (Button) dialog.getDialogPane().lookupButton(refreshButtonType);
         Runnable updateButtons = () -> {
             PresenceTracker.Presence selected = list.getSelectionModel().getSelectedItem();
             pairButton.setDisable(selected == null || service.isTrusted(selected.peer()));
@@ -718,6 +725,10 @@ public final class DesktopApp extends Application {
             } catch (Exception e) {
                 showError("撤销信任失败: " + e.getMessage());
             }
+        });
+        refreshButton.addEventFilter(ActionEvent.ACTION, event -> {
+            event.consume();
+            refresh.run();
         });
 
         dialog.showAndWait();

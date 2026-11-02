@@ -83,6 +83,7 @@ public final class DesktopService implements AutoCloseable {
         Files.createDirectories(config.root());
 
         TrustStore trustStore = new TrustStore(config.dataDir());
+        trustStore.retainOnly(config.group());
         for (DesktopConfig.PeerTarget peer : config.peers()) {
             trustStore.trust(config.group(), peer.fingerprint());
         }
@@ -173,6 +174,10 @@ public final class DesktopService implements AutoCloseable {
 
     public boolean isTrusted(DiscoveredPeer peer) {
         return trustStore.isTrusted(config.group(), peer.fingerprint());
+    }
+
+    public boolean isConnected(DiscoveredPeer peer) {
+        return connectedPeers.contains(peer.fingerprint().toLowerCase(Locale.ROOT));
     }
 
     public String pairingCode(DiscoveredPeer peer) {

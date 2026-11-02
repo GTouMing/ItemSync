@@ -32,4 +32,20 @@ class TrustStoreTest {
         reloaded.untrust(GROUP, fingerprint);
         assertFalse(new TrustStore(temp).isTrusted(GROUP, fingerprint));
     }
+
+    @Test
+    void dropsTrustForOtherGroupsWhenTheGroupChanges() throws Exception {
+        TrustStore store = new TrustStore(temp);
+        String fingerprint = "a".repeat(64);
+        GroupId other = GroupId.parse("group002");
+        store.trust(GROUP, fingerprint);
+        store.trust(other, fingerprint);
+
+        store.retainOnly(other);
+
+        assertFalse(store.isTrusted(GROUP, fingerprint));
+        assertTrue(store.isTrusted(other, fingerprint));
+        assertFalse(new TrustStore(temp).isTrusted(GROUP, fingerprint));
+        assertTrue(new TrustStore(temp).isTrusted(other, fingerprint));
+    }
 }

@@ -60,11 +60,9 @@ public final class DesktopSetupDialog {
         TextField groupField = new TextField(GroupId.random().value());
         TextField rootIdField = new TextField("root-1");
         TextField portField = new TextField("47800");
-        TextField peerField = new TextField();
-        peerField.setPromptText("host:port:指纹，可留空");
 
         Label hint = new Label("本机密码已单独设置；身份由 Windows DPAPI 中的 NUK 静默解锁。\n"
-                + "邻居可留空；填写后会用其指纹作为本机允许连接的邻居。");
+                + "同组设备会通过局域网发现，在“局域网设备”里用 6 位短码完成信任。");
         hint.setWrapText(true);
 
         Label errorLabel = new Label();
@@ -78,7 +76,6 @@ public final class DesktopSetupDialog {
         grid.addRow(1, new Label("组 ID"), groupField);
         grid.addRow(2, new Label("同步根 ID"), rootIdField);
         grid.addRow(3, new Label("端口"), portField);
-        grid.addRow(4, new Label("邻居"), peerField);
 
         VBox content = new VBox(12, grid, hint, errorLabel);
         content.setPadding(new Insets(10));
@@ -96,9 +93,7 @@ public final class DesktopSetupDialog {
                 GroupId group = GroupId.parse(groupField.getText().trim());
                 SyncRootId rootId = SyncRootId.of(rootIdField.getText().trim());
                 int port = Integer.parseInt(portField.getText().trim());
-                List<DesktopConfig.PeerTarget> peers = DesktopConfig.parsePeers(peerField.getText());
-                String expected = peers.isEmpty() ? "none" : peers.get(0).fingerprint();
-                DesktopConfig.create(dataDir, root, group, rootId, port, expected, peers,
+                DesktopConfig.create(dataDir, root, group, rootId, port, "none", List.of(),
                         "", Duration.ofSeconds(30));
             } catch (Exception e) {
                 errorLabel.setText(e.getMessage());
