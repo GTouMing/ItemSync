@@ -28,11 +28,11 @@
 │ Win  │◄──────►│ Win  │◄──────►│ Andr │◄──────►│ Andr │
 │ 节点 │        │ 节点 │        │ 节点 │        │ 节点 │
 └──────┘        └──────┘        └──────┘        └──────┘
-   同步组 = 成员表 + 共享同意关系（两两），无协调者
+   同步组 = 同一组 ID 的隐式集合；实际同步由成对信任开关决定（ADR-0029/0030），无协调者
 ```
 
-- 发现：JmDNS 注册 `_itemsync._tcp.local`，TXT 带 `deviceId` / `protocolVersion` / `pairingFingerprint`。
-- 连接：mTLS，双方出示自签证书，握手后校验固定指纹。
+- 发现：JmDNS 注册 `_itemsync._tcp.local`，TXT 带 `deviceId` / `protocolVersion` / `groupId` / `certificateFingerprint`。
+- 连接：同组设备先完成成对信任与 6 位短码确认，固定证书后进入 mTLS（ADR-0030）。
 - 传播：变更方 `NOTIFY` → 接收方临时 `RECEIVE_ONLY` 拉取 → 立即反推（ADR-0021）。
 - 端口：固定监听 TCP `47800`（ADR-0011），mDNS TXT 同时发布端口号；被占用则启动失败并提示，不自动漂移。
 
@@ -170,10 +170,10 @@ CREATE TABLE resume       (blob_hash TEXT NOT NULL, peer_node_id TEXT NOT NULL, 
 
 ```
 本地变更（防抖 30s 后）
-  └─ newRun(source=me) → NOTIFY 给在线且双向同意的成员
+  └─ newRun(source=me) → NOTIFY 给在线且已互相信任的节点
 
 收到 NOTIFY(runId, source, summary)
-  ├─ 未双向同意 → 丢弃
+  ├─ 未互相信任 → 丢弃
   ├─ 入队，按 (logicalTime, deviceId) 排序
   └─ 轮到我执行：
        ① 进入 RECEIVE_ONLY(group)
@@ -304,7 +304,7 @@ Android：
 
 | 风险                                | 影响                | 缓解                                                 |
 |-------------------------------------|---------------------|------------------------------------------------------|
-| 8 位组 ID 可枚举                    | 成员表/在线状态泄露 | 入组限流 + 退避 + 组 ID 轮换；可选 16 位（ADR-0024） |
+| 8 位组 ID 可枚举                    | 在线状态/设备名泄露 | 组 ID 不是秘密；成对信任 + 6 位短码保护数据；关闭信任/撤销阻断（ADR-0029/0030） |
 | Play 拒绝 `MANAGE_EXTERNAL_STORAGE` | 无法上架            | 申报核心用途；准备 SAF 降级方案（新 ADR）            |
 | 厂商 ROM 杀后台                     | 同步延迟            | 前台服务 + 白名单引导 + 闹钟恢复；UI 明示            |
 | 组播被路由器/系统限制               | 发现失败            | 手动添加 IP 兜底                                     |
@@ -320,7 +320,6 @@ Android：
 2. Windows 目录监听用 JNA 还是自带 JNI 封装；轮询兜底阈值。
 3. 自动更新机制是否纳入 M2 之后（当前在范围外）。
 4. 传输并发上限与带宽限制是否需要 UI 配置。
-5. 组 ID 是否额外提供 16 位模式（当前固定 8 位 `[0-9a-z]`）。
 
 ## 13. 里程碑
 
