@@ -10,6 +10,7 @@ import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.Trigger;
 import github.gtouming.itemsync.platform.desktop.NioDirectoryWatcher;
 import github.gtouming.itemsync.platform.desktop.ProcessWatcher;
+import github.gtouming.itemsync.domain.security.PairingCode;
 import github.gtouming.itemsync.store.blob.BlobStore;
 import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.store.metadata.jdbc.JdbcMetadataStore;
@@ -22,11 +23,14 @@ import github.gtouming.itemsync.sync.state.VersionHistoryService;
 import github.gtouming.itemsync.sync.trigger.TriggerConfig;
 import github.gtouming.itemsync.sync.trigger.TriggerConfigCodec;
 import github.gtouming.itemsync.sync.trigger.TriggerEngine;
+import github.gtouming.itemsync.transport.discovery.DiscoveredPeer;
 import github.gtouming.itemsync.transport.discovery.PresenceTracker;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.net.Inet4Address;
+import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -38,6 +42,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 public final class DesktopService implements AutoCloseable {
@@ -49,12 +54,14 @@ public final class DesktopService implements AutoCloseable {
     private final TriggerEngine triggerEngine;
     private final ConflictResolver conflictResolver;
     private final VersionHistoryService history;
+    private final TrustStore trustStore;
+    private final Set<String> connectedPeers = ConcurrentHashMap.newKeySet();
     private final List<AutoCloseable> watchers;
 
     private DesktopService(DesktopConfig config, TlsIdentity identity, JdbcMetadataStore store,
                            SyncNode node, TriggerEngine triggerEngine,
                            ConflictResolver conflictResolver, VersionHistoryService history,
-                           List<AutoCloseable> watchers) {
+                           TrustStore trustStore, List<AutoCloseable> watchers) {
         this.config = config;
         this.identity = identity;
         this.store = store;
@@ -62,6 +69,7 @@ public final class DesktopService implements AutoCloseable {
         this.triggerEngine = triggerEngine;
         this.conflictResolver = conflictResolver;
         this.history = history;
+        this.trustStore = trustStore;
         this.watchers = watchers;
     }
 
@@ -73,6 +81,14 @@ public final class DesktopService implements AutoCloseable {
         NodeId nodeId = NodeId.of(read(config.dataDir().resolve("node-id"), "node id"));
         DeviceId deviceId = DeviceId.of(read(config.dataDir().resolve("device-id"), "device id"));
         Files.createDirectories(config.root());
+
+        TrustStore trustStore = new TrustStore(config.dataDir());
+        for (DesktopConfig.PeerTarget peer : config.peers()) {
+            trustStore.trust(config.group(), peer.fingerprint());
+        }
+        if (!"none".equals(config.expectedClientFingerprint())) {
+            trustStore.trust(config.group(), config.expectedClientFingerprint());
+        }
 
         JdbcMetadataStore store = openStore(config.dataDir());
         PhysicalPathResolver physical = resolver();
@@ -132,15 +148,79 @@ public final class DesktopService implements AutoCloseable {
         }
 
         return new DesktopService(config, identity, store, node, engine, conflictResolver,
-                history, List.copyOf(watchers));
+                history, trustStore, List.copyOf(watchers));
     }
 
     public List<SyncRunResult> syncNow() throws IOException {
+        reconcileTrustedPeers();
         return node.syncNow();
     }
 
     public List<PresenceTracker.Presence> onlinePeers() {
-        return node.onlinePeers();
+        List<PresenceTracker.Presence> peers = node.onlinePeers();
+        for (PresenceTracker.Presence presence : peers) {
+            if (isTrusted(presence.peer())) {
+                try {
+                    connect(presence.peer());
+                } catch (IOException ignored) {
+                    // the peer has not trusted us yet, or is temporarily unreachable
+                }
+            }
+        }
+        return peers;
+    }
+
+    public boolean isTrusted(DiscoveredPeer peer) {
+        return trustStore.isTrusted(config.group(), peer.fingerprint());
+    }
+
+    public String pairingCode(DiscoveredPeer peer) {
+        return PairingCode.between(config.group(), identity.fingerprint(), peer.fingerprint());
+    }
+
+    public void trustPeer(DiscoveredPeer peer) throws IOException {
+        trustStore.trust(config.group(), peer.fingerprint());
+        node.allowClient(peer.fingerprint());
+        connect(peer);
+    }
+
+    public void untrustPeer(DiscoveredPeer peer) throws IOException {
+        trustStore.untrust(config.group(), peer.fingerprint());
+        node.revokeClient(peer.fingerprint());
+        node.removePeer(peer.nodeId());
+        connectedPeers.remove(peer.fingerprint().toLowerCase(Locale.ROOT));
+    }
+
+    private void reconcileTrustedPeers() {
+        for (PresenceTracker.Presence presence : node.onlinePeers()) {
+            if (isTrusted(presence.peer())) {
+                try {
+                    connect(presence.peer());
+                } catch (IOException ignored) {
+                    // retry on the next sync or LAN dialog refresh
+                }
+            }
+        }
+    }
+
+    private void connect(DiscoveredPeer peer) throws IOException {
+        if (!isTrusted(peer)) {
+            return;
+        }
+        String fingerprint = peer.fingerprint().toLowerCase(Locale.ROOT);
+        if (connectedPeers.contains(fingerprint)) {
+            return;
+        }
+        InetAddress address = peer.addresses().stream()
+                .filter(candidate -> candidate instanceof Inet4Address)
+                .findFirst()
+                .orElseGet(() -> peer.addresses().stream().findFirst().orElse(null));
+        if (address == null) {
+            throw new IOException("no address for peer " + peer.deviceId().value());
+        }
+        node.allowClient(peer.fingerprint());
+        node.addPeer(peer.nodeId(), address.getHostAddress(), peer.port(), peer.fingerprint());
+        connectedPeers.add(fingerprint);
     }
 
     public List<ConflictResolver.ConflictView> openConflicts() {

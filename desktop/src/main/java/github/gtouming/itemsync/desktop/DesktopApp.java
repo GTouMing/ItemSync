@@ -622,41 +622,115 @@ public final class DesktopApp extends Application {
         Dialog<Void> dialog = new Dialog<>();
         dialog.setTitle("ItemSync");
         dialog.setHeaderText("局域网设备（" + peers.size() + "）");
-        ListView<String> list = new ListView<>();
-        for (PresenceTracker.Presence presence : peers) {
-            StringBuilder addresses = new StringBuilder();
-            for (InetAddress address : presence.peer().addresses()) {
-                if (addresses.length() > 0) {
-                    addresses.append(", ");
-                }
-                addresses.append(address.getHostAddress());
-            }
-            list.getItems().add(presence.peer().deviceId().value()
-                    + "\n地址: " + (addresses.length() == 0 ? "未知" : addresses)
-                    + "  端口: " + presence.peer().port()
-                    + "\n指纹: " + presence.peer().fingerprint()
-                    + "\n最近在线: " + presence.lastSeen()
-                    + "\n状态: 未信任（信任与短码配对未接入）");
-        }
+        ListView<PresenceTracker.Presence> list = new ListView<>();
+        list.getItems().setAll(peers);
         list.setPrefHeight(300);
         list.setCellFactory(view -> new ListCell<>() {
             @Override
-            protected void updateItem(String item, boolean empty) {
-                super.updateItem(item, empty);
-                setText(empty ? null : item);
+            protected void updateItem(PresenceTracker.Presence presence, boolean empty) {
+                super.updateItem(presence, empty);
+                if (empty || presence == null) {
+                    setText(null);
+                    return;
+                }
+                StringBuilder addresses = new StringBuilder();
+                for (InetAddress address : presence.peer().addresses()) {
+                    if (addresses.length() > 0) {
+                        addresses.append(", ");
+                    }
+                    addresses.append(address.getHostAddress());
+                }
                 setWrapText(true);
+                setText(presence.peer().deviceId().value()
+                        + "\n地址: " + (addresses.length() == 0 ? "未知" : addresses)
+                        + "  端口: " + presence.peer().port()
+                        + "\n指纹: " + presence.peer().fingerprint()
+                        + "\n最近在线: " + presence.lastSeen()
+                        + "\n状态: " + (service.isTrusted(presence.peer()) ? "已信任" : "未信任"));
             }
         });
-        Label hint = new Label("只显示同一组 ID 的在线设备；暂不能同步，"
-                + "信任开关与 6 位短码配对将在下一段接入。");
+        list.getSelectionModel().selectFirst();
+
+        Label hint = new Label("信任需要双方操作：两台设备都确认同一个 6 位短码并点信任后才会同步。"
+                + "组 ID 只决定能发现哪些设备。");
         hint.setWrapText(true);
+
+        ButtonType pair = new ButtonType("信任 / 配对", ButtonBar.ButtonData.OTHER);
+        ButtonType revoke = new ButtonType("撤销信任", ButtonBar.ButtonData.OTHER);
+        ButtonType close = new ButtonType("关闭", ButtonBar.ButtonData.CANCEL_CLOSE);
+        dialog.getDialogPane().getButtonTypes().addAll(pair, revoke, close);
         VBox content = new VBox(10, list, hint);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
-        dialog.getDialogPane().getButtonTypes().add(
-                new ButtonType("关闭", ButtonBar.ButtonData.CANCEL_CLOSE));
-        dialog.getDialogPane().setPrefWidth(760);
+        dialog.getDialogPane().setPrefWidth(780);
+
+        Button pairButton = (Button) dialog.getDialogPane().lookupButton(pair);
+        Button revokeButton = (Button) dialog.getDialogPane().lookupButton(revoke);
+        Runnable updateButtons = () -> {
+            PresenceTracker.Presence selected = list.getSelectionModel().getSelectedItem();
+            pairButton.setDisable(selected == null || service.isTrusted(selected.peer()));
+            revokeButton.setDisable(selected == null || !service.isTrusted(selected.peer()));
+        };
+        list.getSelectionModel().selectedItemProperty().addListener(
+                (observable, oldValue, newValue) -> updateButtons.run());
+        updateButtons.run();
+
+        Runnable refresh = () -> {
+            list.getItems().setAll(service.onlinePeers());
+            if (!list.getItems().isEmpty()) {
+                list.getSelectionModel().selectFirst();
+            }
+            updateButtons.run();
+        };
+
+        pairButton.addEventFilter(ActionEvent.ACTION, event -> {
+            event.consume();
+            PresenceTracker.Presence selected = list.getSelectionModel().getSelectedItem();
+            if (selected == null || !confirmPairing(selected)) {
+                return;
+            }
+            try {
+                service.trustPeer(selected.peer());
+                refresh.run();
+            } catch (Exception e) {
+                showError("已记录本机信任，但连接失败；等待对方信任后重试: " + e.getMessage());
+                refresh.run();
+            }
+        });
+        revokeButton.addEventFilter(ActionEvent.ACTION, event -> {
+            event.consume();
+            PresenceTracker.Presence selected = list.getSelectionModel().getSelectedItem();
+            if (selected == null) {
+                return;
+            }
+            try {
+                service.untrustPeer(selected.peer());
+                refresh.run();
+            } catch (Exception e) {
+                showError("撤销信任失败: " + e.getMessage());
+            }
+        });
+
         dialog.showAndWait();
+    }
+
+    private boolean confirmPairing(PresenceTracker.Presence presence) {
+        String code = service.pairingCode(presence.peer());
+        Dialog<Boolean> dialog = new Dialog<>();
+        dialog.setTitle("ItemSync");
+        dialog.setHeaderText("核对配对短码");
+        Label codeLabel = new Label(code);
+        codeLabel.setStyle("-fx-font-size: 32px; -fx-font-family: monospace;");
+        Label hint = new Label("在另一台设备上对 " + presence.peer().deviceId().value()
+                + " 执行信任，并确认两边显示相同的短码。\n确认后本机才开始信任该设备。");
+        hint.setWrapText(true);
+        VBox content = new VBox(12, codeLabel, hint);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+        ButtonType ok = new ButtonType("已核对，信任", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
+        dialog.setResultConverter(button -> button == ok ? Boolean.TRUE : null);
+        return dialog.showAndWait().orElse(false);
     }
 
     private void configureAutostart(CheckBox checkBox) {
