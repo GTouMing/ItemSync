@@ -2,21 +2,33 @@ package github.gtouming.itemsync.android;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.Dialog;
+import android.content.ComponentName;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.IBinder;
 import android.text.InputType;
+import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import github.gtouming.itemsync.domain.security.LocalPassword;
+import github.gtouming.itemsync.sync.trust.PeerTrustCoordinator;
+import github.gtouming.itemsync.sync.trust.RemoteTrust;
 
+import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.List;
 
 public final class MainActivity extends Activity {
@@ -24,10 +36,36 @@ public final class MainActivity extends Activity {
     private AndroidSyncConfig config;
     private EditText rootField;
     private EditText groupField;
-    private EditText peersField;
     private EditText portField;
     private EditText intervalField;
     private TextView fingerprintLabel;
+
+    private SyncForegroundService boundService;
+    private boolean bound;
+    private DeviceDialog deviceDialog;
+
+    private final ServiceConnection connection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder binder) {
+            bound = true;
+            boundService = ((SyncForegroundService.LocalBinder) binder).service();
+            if (!boundService.isReady()) {
+                Toast.makeText(MainActivity.this, "同步服务尚未就绪", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            openDeviceDialog();
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            bound = false;
+            boundService = null;
+            if (deviceDialog != null) {
+                deviceDialog.dismiss();
+                deviceDialog = null;
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle state) {
@@ -38,6 +76,20 @@ public final class MainActivity extends Activity {
         } else {
             showSetup();
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (deviceDialog != null) {
+            deviceDialog.dismiss();
+            deviceDialog = null;
+        }
+        if (bound) {
+            unbindService(connection);
+            bound = false;
+        }
+        boundService = null;
+        super.onDestroy();
     }
 
     private void showSetup() {
@@ -116,11 +168,10 @@ public final class MainActivity extends Activity {
 
     private void showConfig() {
         LinearLayout layout = vertical();
-        layout.addView(hint("同步根默认为应用专属目录。本机密码只锁界面；身份由 NUK 静默解锁。"));
+        layout.addView(hint("同步根默认为应用专属目录。本机密码只锁界面；身份由 NUK 静默解锁。\n"
+                + "同组设备会在“局域网设备”中显示，核对 6 位短码后建立信任。"));
         rootField = field(layout, "同步根", config.rootPath(), false);
         groupField = field(layout, "组 ID", config.groupId(), false);
-        peersField = field(layout, "邻居（host:port:指纹，多个用逗号）",
-                join(config.peers()), false);
         portField = field(layout, "端口", String.valueOf(config.port()), true);
         intervalField = field(layout, "定时同步秒数（0 关闭）",
                 String.valueOf(config.intervalSeconds()), true);
@@ -141,6 +192,11 @@ public final class MainActivity extends Activity {
         start.setText("保存并启动");
         start.setOnClickListener(view -> startSync());
         layout.addView(start);
+
+        Button devices = new Button(this);
+        devices.setText("局域网设备");
+        devices.setOnClickListener(view -> showDevices());
+        layout.addView(devices);
 
         Button stop = new Button(this);
         stop.setText("停止同步");
@@ -171,7 +227,6 @@ public final class MainActivity extends Activity {
             config.save(
                     rootField.getText().toString(),
                     groupField.getText().toString(),
-                    peersField.getText().toString(),
                     port,
                     interval);
             if (config.identitySecret().length == 0) {
@@ -188,6 +243,274 @@ public final class MainActivity extends Activity {
         } catch (Exception e) {
             Toast.makeText(this, "启动失败: " + message(e), Toast.LENGTH_LONG).show();
         }
+    }
+
+    private void showDevices() {
+        if (boundService != null && boundService.isReady()) {
+            openDeviceDialog();
+            return;
+        }
+        if (bound) {
+            Toast.makeText(this, "同步服务尚未就绪", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Intent intent = new Intent(this, SyncForegroundService.class);
+        if (!bindService(intent, connection, 0)) {
+            Toast.makeText(this, "请先启动同步服务", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void openDeviceDialog() {
+        SyncForegroundService service = boundService;
+        if (service == null) {
+            return;
+        }
+        new Thread(() -> {
+            try {
+                List<PeerTrustCoordinator.PeerView> views = service.peerViews();
+                runOnUiThread(() -> {
+                    if (deviceDialog != null) {
+                        deviceDialog.dismiss();
+                    }
+                    deviceDialog = new DeviceDialog(views);
+                    deviceDialog.show();
+                });
+            } catch (RuntimeException e) {
+                runOnUiThread(() -> Toast.makeText(MainActivity.this,
+                        "读取在线设备失败: " + message(e), Toast.LENGTH_LONG).show());
+            }
+        }).start();
+    }
+
+    private void callService(String failure, ServiceAction action) {
+        new Thread(() -> {
+            try {
+                action.run();
+                SyncForegroundService service = boundService;
+                if (service != null) {
+                    service.requestSync();
+                }
+                runOnUiThread(() -> {
+                    if (deviceDialog != null) {
+                        deviceDialog.reload();
+                    }
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(MainActivity.this,
+                        failure + ": " + message(e), Toast.LENGTH_LONG).show());
+            }
+        }).start();
+    }
+
+    private boolean confirmPairing(PeerTrustCoordinator.PeerView view, Runnable onConfirm) {
+        SyncForegroundService service = boundService;
+        if (service == null) {
+            return false;
+        }
+        String code;
+        try {
+            code = service.pairingCode(view.presence().peer());
+        } catch (RuntimeException e) {
+            Toast.makeText(this, "无法生成配对短码: " + message(e), Toast.LENGTH_LONG).show();
+            return false;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("核对配对短码")
+                .setMessage(code + "\n\n在另一台设备上对 "
+                        + view.presence().peer().deviceId().value()
+                        + " 执行信任，并确认两边显示相同的短码。")
+                .setPositiveButton("已核对，信任", (dialog, which) -> onConfirm.run())
+                .setNegativeButton("取消", null)
+                .show();
+        return true;
+    }
+
+    private static String trustState(PeerTrustCoordinator.PeerView view) {
+        if (!view.locallyTrusted()) {
+            return switch (view.remoteTrust()) {
+                case TRUSTED -> "对方已信任你，等待本机确认";
+                case UNTRUSTED -> "未信任";
+                case UNKNOWN -> "未信任（无法确认对方状态）";
+            };
+        }
+        if (view.remoteTrust() == RemoteTrust.TRUSTED && view.connected()) {
+            return "已信任（双方，已连接）";
+        }
+        return switch (view.remoteTrust()) {
+            case TRUSTED -> "已信任（双方）";
+            case UNTRUSTED -> "已信任（等待对方确认）";
+            case UNKNOWN -> "已信任（无法确认对方状态）";
+        };
+    }
+
+    private static String deviceLabel(PeerTrustCoordinator.PeerView view) {
+        StringBuilder addresses = new StringBuilder();
+        for (InetAddress address : view.presence().peer().addresses()) {
+            if (addresses.length() > 0) {
+                addresses.append(", ");
+            }
+            addresses.append(address.getHostAddress());
+        }
+        return view.presence().peer().deviceId().value()
+                + "\n地址: " + (addresses.length() == 0 ? "未知" : addresses)
+                + "  端口: " + view.presence().peer().port()
+                + "\n指纹: " + view.presence().peer().fingerprint()
+                + "\n最近在线: " + view.presence().lastSeen()
+                + "\n状态: " + trustState(view);
+    }
+
+    private final class DeviceDialog {
+
+        private final Dialog dialog;
+        private final ListView list;
+        private final TextView emptyLabel;
+        private final ArrayAdapter<PeerTrustCoordinator.PeerView> adapter;
+        private final Button pairButton;
+        private final Button revokeButton;
+
+        private DeviceDialog(List<PeerTrustCoordinator.PeerView> views) {
+            dialog = new Dialog(MainActivity.this);
+            dialog.setTitle("局域网设备");
+
+            LinearLayout content = new LinearLayout(MainActivity.this);
+            content.setOrientation(LinearLayout.VERTICAL);
+            int padding = dp(16);
+            content.setPadding(padding, padding, padding, padding);
+
+            emptyLabel = new TextView(MainActivity.this);
+            emptyLabel.setText("同组内暂无在线设备");
+            content.addView(emptyLabel);
+
+            adapter = new ArrayAdapter<PeerTrustCoordinator.PeerView>(
+                    MainActivity.this, android.R.layout.simple_list_item_1,
+                    new ArrayList<>()) {
+                @Override
+                public View getView(int position, View convertView, ViewGroup parent) {
+                    TextView text = (TextView) super.getView(position, convertView, parent);
+                    text.setText(deviceLabel(getItem(position)));
+                    text.setTextSize(12);
+                    return text;
+                }
+            };
+            list = new ListView(MainActivity.this);
+            list.setAdapter(adapter);
+            list.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
+            list.setOnItemClickListener((parent, view, position, id) -> updateButtons());
+            content.addView(list, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, dp(300)));
+
+            pairButton = new Button(MainActivity.this);
+            pairButton.setText("信任 / 配对");
+            pairButton.setOnClickListener(view -> pairSelected());
+            content.addView(pairButton);
+
+            revokeButton = new Button(MainActivity.this);
+            revokeButton.setText("撤销信任");
+            revokeButton.setOnClickListener(view -> revokeSelected());
+            content.addView(revokeButton);
+
+            Button refresh = new Button(MainActivity.this);
+            refresh.setText("刷新");
+            refresh.setOnClickListener(view -> reload());
+            content.addView(refresh);
+
+            Button close = new Button(MainActivity.this);
+            close.setText("关闭");
+            close.setOnClickListener(view -> dialog.dismiss());
+            content.addView(close);
+
+            dialog.setContentView(content);
+            render(views);
+        }
+
+        private void show() {
+            dialog.show();
+        }
+
+        private void dismiss() {
+            dialog.dismiss();
+        }
+
+        private void reload() {
+            SyncForegroundService service = boundService;
+            if (service == null) {
+                Toast.makeText(MainActivity.this, "同步服务已断开", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            pairButton.setEnabled(false);
+            revokeButton.setEnabled(false);
+            new Thread(() -> {
+                try {
+                    List<PeerTrustCoordinator.PeerView> views = service.peerViews();
+                    runOnUiThread(() -> render(views));
+                } catch (RuntimeException e) {
+                    runOnUiThread(() -> {
+                        Toast.makeText(MainActivity.this,
+                                "刷新在线设备失败: " + message(e), Toast.LENGTH_LONG).show();
+                        updateButtons();
+                    });
+                }
+            }).start();
+        }
+
+        private void render(List<PeerTrustCoordinator.PeerView> views) {
+            adapter.clear();
+            adapter.addAll(views);
+            adapter.notifyDataSetChanged();
+            emptyLabel.setVisibility(views.isEmpty() ? View.VISIBLE : View.GONE);
+            if (!views.isEmpty()) {
+                list.setItemChecked(0, true);
+            }
+            updateButtons();
+        }
+
+        private PeerTrustCoordinator.PeerView selected() {
+            int position = list.getCheckedItemPosition();
+            if (position == ListView.INVALID_POSITION || position >= adapter.getCount()) {
+                return null;
+            }
+            return adapter.getItem(position);
+        }
+
+        private void updateButtons() {
+            PeerTrustCoordinator.PeerView view = selected();
+            pairButton.setEnabled(view != null && !view.locallyTrusted()
+                    && view.identityVerified());
+            revokeButton.setEnabled(view != null && view.locallyTrusted());
+        }
+
+        private void pairSelected() {
+            PeerTrustCoordinator.PeerView view = selected();
+            if (view == null || !view.identityVerified()) {
+                return;
+            }
+            confirmPairing(view, () -> callService("信任失败", () -> {
+                SyncForegroundService service = boundService;
+                if (service == null) {
+                    throw new IllegalStateException("同步服务已断开");
+                }
+                service.trustPeer(view.presence().peer());
+            }));
+        }
+
+        private void revokeSelected() {
+            PeerTrustCoordinator.PeerView view = selected();
+            if (view == null) {
+                return;
+            }
+            callService("撤销信任失败", () -> {
+                SyncForegroundService service = boundService;
+                if (service == null) {
+                    throw new IllegalStateException("同步服务已断开");
+                }
+                service.untrustPeer(view.presence().peer());
+            });
+        }
+    }
+
+    @FunctionalInterface
+    private interface ServiceAction {
+        void run() throws Exception;
     }
 
     private LinearLayout vertical() {
@@ -245,17 +568,5 @@ public final class MainActivity extends Activity {
     private static String message(Exception e) {
         String message = e.getMessage();
         return message == null || message.isEmpty() ? e.getClass().getSimpleName() : message;
-    }
-
-    private static String join(List<AndroidSyncConfig.Peer> peers) {
-        StringBuilder out = new StringBuilder();
-        for (AndroidSyncConfig.Peer peer : peers) {
-            if (out.length() > 0) {
-                out.append(", ");
-            }
-            out.append(peer.host()).append(':').append(peer.port())
-                    .append(':').append(peer.fingerprint());
-        }
-        return out.toString();
     }
 }

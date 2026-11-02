@@ -8,30 +8,8 @@ import github.gtouming.itemsync.domain.security.LocalPassword;
 import github.gtouming.itemsync.domain.security.NodeUnlockKey;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
 
 public final class AndroidSyncConfig {
-
-    public record Peer(String host, int port, String fingerprint) {
-
-        public static Peer parse(String value) {
-            int fingerprintSeparator = value.lastIndexOf(':');
-            int portSeparator = value.lastIndexOf(':', fingerprintSeparator - 1);
-            if (portSeparator <= 0 || fingerprintSeparator <= portSeparator + 1
-                    || fingerprintSeparator == value.length() - 1) {
-                throw new IllegalArgumentException("peer must be host:port:fingerprint: " + value);
-            }
-            String host = value.substring(0, portSeparator);
-            int port = Integer.parseInt(value.substring(portSeparator + 1, fingerprintSeparator));
-            if (port <= 0 || port > 65535) {
-                throw new IllegalArgumentException("peer port out of range: " + port);
-            }
-            return new Peer(host, port, value.substring(fingerprintSeparator + 1));
-        }
-    }
 
     private static final String PREFS = "itemsync";
 
@@ -101,32 +79,6 @@ public final class AndroidSyncConfig {
         return prefs.getString("fingerprint", "");
     }
 
-    public List<Peer> peers() {
-        List<Peer> peers = new ArrayList<>();
-        String raw = prefs.getString("peers", "");
-        for (String part : raw.split(",")) {
-            String value = part.trim();
-            if (!value.isEmpty()) {
-                peers.add(Peer.parse(value));
-            }
-        }
-        return peers;
-    }
-
-    public Set<String> expectedClients() {
-        Set<String> clients = new LinkedHashSet<>();
-        for (String part : prefs.getString("expect", "").split(",")) {
-            String value = part.trim();
-            if (!value.isEmpty()) {
-                clients.add(value);
-            }
-        }
-        for (Peer peer : peers()) {
-            clients.add(peer.fingerprint());
-        }
-        return clients;
-    }
-
     /**
      * NUK for the TLS identity. Legacy installs reuse the old encrypted identity
      * password; fresh installs get a random 32-byte NUK. The GUI password is
@@ -164,11 +116,12 @@ public final class AndroidSyncConfig {
                 && (prefs.contains("nuk") || prefs.contains("password"));
     }
 
-    public void save(String root, String group, String peers, int port, int intervalSeconds) {
+    public void save(String root, String group, int port, int intervalSeconds) {
         SharedPreferences.Editor editor = prefs.edit();
         editor.putString("root", root.trim());
         editor.putString("group", group.trim());
-        editor.putString("peers", peers.trim());
+        editor.remove("peers");
+        editor.remove("expect");
         editor.putInt("port", port);
         editor.putInt("interval", intervalSeconds);
         editor.putBoolean("configured", true);

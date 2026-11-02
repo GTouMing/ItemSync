@@ -5,8 +5,11 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
+import android.net.wifi.WifiManager;
+import android.os.Binder;
 import android.os.IBinder;
 import android.util.Log;
 
@@ -19,15 +22,15 @@ import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.sync.apply.PathResolvers;
 import github.gtouming.itemsync.sync.engine.SyncRunResult;
 import github.gtouming.itemsync.sync.engine.node.SyncNode;
+import github.gtouming.itemsync.sync.trust.PeerTrustCoordinator;
+import github.gtouming.itemsync.transport.discovery.DiscoveredPeer;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -41,15 +44,24 @@ public final class SyncForegroundService extends Service {
     private static final String CHANNEL_ID = "itemsync";
     private static final int NOTIFICATION_ID = 1;
 
+    private final IBinder binder = new LocalBinder();
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final ScheduledExecutorService scheduler =
             Executors.newSingleThreadScheduledExecutor();
 
     private volatile SyncNode node;
+    private volatile PeerTrustCoordinator peerTrust;
     private AndroidSqliteMetadataStore store;
     private AndroidDirectoryWatcher watcher;
+    private WifiManager.MulticastLock multicastLock;
     private ScheduledFuture<?> debounce;
     private volatile boolean started;
+
+    public final class LocalBinder extends Binder {
+        public SyncForegroundService service() {
+            return SyncForegroundService.this;
+        }
+    }
 
     @Override
     public void onCreate() {
@@ -73,7 +85,46 @@ public final class SyncForegroundService extends Service {
 
     @Override
     public IBinder onBind(Intent intent) {
-        return null;
+        return binder;
+    }
+
+    public boolean isReady() {
+        return node != null && peerTrust != null;
+    }
+
+    public List<PeerTrustCoordinator.PeerView> peerViews() {
+        PeerTrustCoordinator current = peerTrust;
+        return current == null ? Compat.list() : current.peerViews();
+    }
+
+    public void trustPeer(DiscoveredPeer peer) throws IOException {
+        PeerTrustCoordinator current = peerTrust;
+        if (current == null) {
+            throw new IllegalStateException("同步服务尚未启动");
+        }
+        current.trustPeer(peer);
+    }
+
+    public void untrustPeer(DiscoveredPeer peer) throws IOException {
+        PeerTrustCoordinator current = peerTrust;
+        if (current == null) {
+            throw new IllegalStateException("同步服务尚未启动");
+        }
+        current.untrustPeer(peer);
+    }
+
+    public String pairingCode(DiscoveredPeer peer) {
+        PeerTrustCoordinator current = peerTrust;
+        if (current == null) {
+            throw new IllegalStateException("同步服务尚未启动");
+        }
+        return current.pairingCode(peer);
+    }
+
+    public void requestSync() {
+        if (node != null) {
+            executor.execute(this::sync);
+        }
     }
 
     private void startNode() {
@@ -93,29 +144,26 @@ public final class SyncForegroundService extends Service {
 
             NodeId nodeId = NodeId.of(readOrCreate("node-id"));
             DeviceId deviceId = DeviceId.of(readOrCreate("device-id"));
+            GroupId group = GroupId.parse(config.groupId());
             Path root = Compat.path(config.rootPath());
             Files.createDirectories(root);
 
+            acquireMulticastLock();
+            AndroidTrustStore trustStore = new AndroidTrustStore(this);
+            trustStore.retainOnly(group);
+
             store = new AndroidSqliteMetadataStore(this, "itemsync.sqlite");
-            Set<String> accepted = new LinkedHashSet<>(config.expectedClients());
-            if (accepted.isEmpty()) {
-                accepted.add("none");
-            }
-            node = new SyncNode(nodeId, GroupId.parse(config.groupId()),
-                    SyncRootId.of(config.rootId()), root, store,
+            node = new SyncNode(nodeId, group, SyncRootId.of(config.rootId()), root, store,
                     new FileSystemBlobStore(new File(getFilesDir(), "data").toPath()),
-                    PathResolvers.posix(), identity, deviceId, accepted, config.port(),
-                    new File(getCacheDir(), "transfer").toPath());
-            for (AndroidSyncConfig.Peer peer : config.peers()) {
-                try {
-                    node.addPeer(peerNodeId(peer), peer.host(), peer.port(), peer.fingerprint());
-                } catch (Exception e) {
-                    Log.w(TAG, "peer unavailable: " + peer.host() + ":" + peer.port(), e);
-                }
-            }
+                    PathResolvers.posix(), identity, deviceId, Compat.set("none"),
+                    config.port(), new File(getCacheDir(), "transfer").toPath(),
+                    trustStore::isTrusted);
+            peerTrust = new PeerTrustCoordinator(group, identity, node, trustStore);
+            peerTrust.reconcileTrustedPeers();
 
             watcher = new AndroidDirectoryWatcher(root.toFile(), this::onFilesChanged);
             watcher.start();
+            scheduler.scheduleWithFixedDelay(this::reconcile, 10, 10, TimeUnit.SECONDS);
             int interval = config.intervalSeconds();
             if (interval > 0) {
                 scheduler.scheduleWithFixedDelay(this::sync, interval, interval, TimeUnit.SECONDS);
@@ -126,6 +174,39 @@ public final class SyncForegroundService extends Service {
             Log.e(TAG, "start failed", e);
             updateNotification("启动失败: " + message(e));
             closeNode();
+        }
+    }
+
+    private void reconcile() {
+        PeerTrustCoordinator current = peerTrust;
+        if (current == null) {
+            return;
+        }
+        try {
+            current.reconcileTrustedPeers();
+            current.refreshRemoteTrust();
+        } catch (RuntimeException e) {
+            Log.w(TAG, "peer reconcile failed", e);
+        }
+    }
+
+    private void acquireMulticastLock() {
+        WifiManager wifi = (WifiManager) getApplicationContext()
+                .getSystemService(Context.WIFI_SERVICE);
+        if (wifi == null) {
+            return;
+        }
+        multicastLock = wifi.createMulticastLock("itemsync-mdns");
+        multicastLock.setReferenceCounted(false);
+        multicastLock.acquire();
+    }
+
+    private void releaseMulticastLock() {
+        if (multicastLock != null) {
+            if (multicastLock.isHeld()) {
+                multicastLock.release();
+            }
+            multicastLock = null;
         }
     }
 
@@ -149,11 +230,6 @@ public final class SyncForegroundService extends Service {
         return value;
     }
 
-    private static NodeId peerNodeId(AndroidSyncConfig.Peer peer) {
-        String fingerprint = peer.fingerprint();
-        return NodeId.of("peer-" + fingerprint.substring(0, Math.min(8, fingerprint.length())));
-    }
-
     private void onFilesChanged() {
         synchronized (this) {
             if (debounce != null) {
@@ -172,6 +248,10 @@ public final class SyncForegroundService extends Service {
             return;
         }
         try {
+            PeerTrustCoordinator trust = peerTrust;
+            if (trust != null) {
+                trust.reconcileTrustedPeers();
+            }
             List<SyncRunResult> results = current.syncNow();
             int pulled = 0;
             int conflicts = 0;
@@ -225,6 +305,11 @@ public final class SyncForegroundService extends Service {
             watcher.close();
             watcher = null;
         }
+        PeerTrustCoordinator trust = peerTrust;
+        peerTrust = null;
+        if (trust != null) {
+            trust.close();
+        }
         if (node != null) {
             node.close();
             node = null;
@@ -233,6 +318,7 @@ public final class SyncForegroundService extends Service {
             store.close();
             store = null;
         }
+        releaseMulticastLock();
     }
 
     @Override
