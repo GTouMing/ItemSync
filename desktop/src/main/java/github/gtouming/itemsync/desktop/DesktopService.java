@@ -84,32 +84,19 @@ public final class DesktopService implements AutoCloseable {
 
         TrustStore trustStore = new TrustStore(config.dataDir());
         trustStore.retainOnly(config.group());
-        for (DesktopConfig.PeerTarget peer : config.peers()) {
-            trustStore.trust(config.group(), peer.fingerprint());
-        }
-        if (!"none".equals(config.expectedClientFingerprint())) {
-            trustStore.trust(config.group(), config.expectedClientFingerprint());
-        }
 
         JdbcMetadataStore store = openStore(config.dataDir());
         PhysicalPathResolver physical = resolver();
         BlobStore blobs = new FileSystemBlobStore(config.dataDir());
-        Set<String> acceptedClients = new LinkedHashSet<>(config.expectedClientFingerprints());
-        for (DesktopConfig.PeerTarget peer : config.peers()) {
-            acceptedClients.add(peer.fingerprint());
-        }
-        if (acceptedClients.isEmpty()) {
-            acceptedClients.add("none");
-        }
+        // SyncNode and PinnedTrustManager reject an empty set; "none" never matches a
+        // certificate. Trusted peers are added dynamically through the device list.
+        Set<String> acceptedClients = Set.of("none");
         SyncNode node;
         try {
             node = new SyncNode(nodeId, config.group(), config.rootId(), config.root(), store,
                     blobs, physical, identity, deviceId,
                     acceptedClients, config.port(),
                     config.dataDir().resolve("transfer"));
-            for (DesktopConfig.PeerTarget peer : config.peers()) {
-                addPeer(node, peer);
-            }
         } catch (Exception e) {
             store.close();
             throw e;
@@ -290,7 +277,7 @@ public final class DesktopService implements AutoCloseable {
             int conflicts = store.conflicts().findOpen(1000).size();
             IOException error = node.lastError() != null ? node.lastError() : triggerEngine.lastError();
             return new Status(node.nodeId(), identity.fingerprint(), node.port(), config.root(),
-                    config.peers().size(), lastRun, conflicts, error);
+                    lastRun, conflicts, error);
         });
     }
 
@@ -302,7 +289,7 @@ public final class DesktopService implements AutoCloseable {
         store.close();
     }
 
-    public record Status(NodeId nodeId, String fingerprint, int port, Path root, int peers,
+    public record Status(NodeId nodeId, String fingerprint, int port, Path root,
                          SyncRun lastRun, int openConflicts, IOException lastError) {
     }
 
@@ -324,27 +311,6 @@ public final class DesktopService implements AutoCloseable {
         if (!Files.isRegularFile(file)) {
             Files.writeString(file, UUID.randomUUID().toString());
         }
-    }
-
-    private static void addPeer(SyncNode node, DesktopConfig.PeerTarget peer) throws IOException {
-        NodeId peerNodeId = NodeId.of("peer-" + peer.fingerprint().substring(0,
-                Math.min(8, peer.fingerprint().length())));
-        IOException lastFailure = null;
-        for (int attempt = 0; attempt < 10; attempt++) {
-            try {
-                node.addPeer(peerNodeId, peer.host(), peer.port(), peer.fingerprint());
-                return;
-            } catch (IOException e) {
-                lastFailure = e;
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw e;
-                }
-            }
-        }
-        throw lastFailure;
     }
 
     private static JdbcMetadataStore openStore(Path dataDir) throws Exception {

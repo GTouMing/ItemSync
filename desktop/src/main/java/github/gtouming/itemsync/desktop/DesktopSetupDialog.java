@@ -22,7 +22,6 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.List;
 
 public final class DesktopSetupDialog {
 
@@ -93,8 +92,8 @@ public final class DesktopSetupDialog {
                 GroupId group = GroupId.parse(groupField.getText().trim());
                 SyncRootId rootId = SyncRootId.of(rootIdField.getText().trim());
                 int port = Integer.parseInt(portField.getText().trim());
-                DesktopConfig.create(dataDir, root, group, rootId, port, "none", List.of(),
-                        "", Duration.ofSeconds(30));
+                DesktopConfig.create(dataDir, root, group, rootId, port, "",
+                        Duration.ofSeconds(30));
             } catch (Exception e) {
                 errorLabel.setText(e.getMessage());
                 event.consume();

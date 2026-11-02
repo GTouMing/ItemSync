@@ -70,7 +70,6 @@ public final class DesktopApp extends Application {
     private final Label nodeLabel = new Label();
     private final Label groupLabel = new Label();
     private final Label rootLabel = new Label();
-    private final Label peersLabel = new Label();
     private final Label fingerprintLabel = new Label();
     private final Label lastRunLabel = new Label();
     private final Label conflictLabel = new Label();
@@ -217,13 +216,11 @@ public final class DesktopApp extends Application {
         grid.add(groupLabel, 1, 1);
         grid.add(new Label("同步根"), 0, 2);
         grid.add(rootLabel, 1, 2);
-        grid.add(new Label("邻居"), 0, 3);
-        grid.add(peersLabel, 1, 3);
-        grid.add(new Label("本机指纹"), 0, 4);
+        grid.add(new Label("本机指纹"), 0, 3);
         fingerprintLabel.setWrapText(true);
-        grid.add(fingerprintLabel, 1, 4);
-        grid.add(new Label("最近运行"), 0, 5);
-        grid.add(lastRunLabel, 1, 5);
+        grid.add(fingerprintLabel, 1, 3);
+        grid.add(new Label("最近运行"), 0, 4);
+        grid.add(lastRunLabel, 1, 4);
 
         conflictLabel.setStyle("-fx-text-fill: #9a6700;");
         errorLabel.setStyle("-fx-text-fill: #b00020;");
@@ -323,7 +320,6 @@ public final class DesktopApp extends Application {
         nodeLabel.setText(status.nodeId().value() + "  (port " + status.port() + ")");
         groupLabel.setText(config.group().value());
         rootLabel.setText(status.root().toString());
-        peersLabel.setText(Integer.toString(status.peers()));
         fingerprintLabel.setText(status.fingerprint());
         if (status.lastRun() == null) {
             lastRunLabel.setText("尚未同步");
@@ -774,7 +770,7 @@ public final class DesktopApp extends Application {
         dialog.setTitle("ItemSync");
         dialog.setHeaderText("修改组 ID");
         TextField field = new TextField(config.group().value());
-        Label warning = new Label("改 ID 会停止当前组同步，清除旧组信任并清空旧邻居配置；"
+        Label warning = new Label("改 ID 会停止当前组同步，清除旧组信任；"
                 + "本机文件和版本保留。保存后应用会退出，请重新启动。");
         warning.setWrapText(true);
         Label error = new Label();
