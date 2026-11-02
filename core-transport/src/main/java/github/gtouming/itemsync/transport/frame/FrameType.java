@@ -13,7 +13,9 @@ public enum FrameType {
     NOTIFY_ACK(10),
     MANIFEST_REQUEST(11),
     MANIFEST_PAGE(12),
-    MANIFEST_END(13);
+    MANIFEST_END(13),
+    PAIRING_STATUS(14),
+    PAIRING_STATUS_ACK(15);
 
     private final int code;
 

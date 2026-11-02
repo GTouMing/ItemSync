@@ -8,6 +8,7 @@ import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLSocket;
+import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
 import java.net.SocketException;
 import java.util.Objects;
@@ -41,6 +42,11 @@ public final class TlsTransportServer implements AutoCloseable {
     }
 
     public TlsTransportServer(TlsIdentity identity, PinnedTrustManager trustManager,
+                              int port, FrameHandler handler) throws IOException {
+        this(identity, (X509TrustManager) trustManager, port, handler);
+    }
+
+    public TlsTransportServer(TlsIdentity identity, X509TrustManager trustManager,
                               int port, FrameHandler handler) throws IOException {
         Objects.requireNonNull(identity, "identity");
         Objects.requireNonNull(trustManager, "trustManager");

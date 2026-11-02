@@ -23,3 +23,9 @@
 - JVM 测试可以使用较新的 API；它们不运行在 Android 上。
 - `platform-desktop` 与 `cli` 不受此限制。
 - Android 服务接入前，需要验证 AGP 对 record / sealed / switch 表达式的 desugaring 覆盖 API 29。
+
+## mDNS 运行约束
+
+- Android 端需要 `ACCESS_WIFI_STATE` 与 `CHANGE_WIFI_MULTICAST_STATE`，并在同步前台服务运行期间持有 `WifiManager.MulticastLock`。
+- 没有 multicast lock 或网络阻断组播时，同组发现可能为空；这属于运行环境问题，不是协议错误。
+- Android 真机行为仍需单独验证，JVM/Robolectric 测试不能替代设备验证。

@@ -7,7 +7,8 @@ import github.gtouming.itemsync.domain.identity.NodeId;
 import java.util.Objects;
 
 public record PeerAdvertisement(NodeId nodeId, DeviceId deviceId, GroupId groupId,
-                                int protocolVersion, String fingerprint, int port) {
+                                int protocolVersion, String fingerprint, int port,
+                                int pairingPort) {
 
     public PeerAdvertisement {
         Objects.requireNonNull(nodeId, "nodeId");
@@ -22,6 +23,9 @@ public record PeerAdvertisement(NodeId nodeId, DeviceId deviceId, GroupId groupI
         }
         if (port <= 0 || port > 65535) {
             throw new IllegalArgumentException("port out of range: " + port);
+        }
+        if (pairingPort < 0 || pairingPort > 65535) {
+            throw new IllegalArgumentException("pairing port out of range: " + pairingPort);
         }
     }
 }

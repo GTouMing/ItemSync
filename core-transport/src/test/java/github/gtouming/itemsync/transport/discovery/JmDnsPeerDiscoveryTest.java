@@ -22,7 +22,7 @@ class JmDnsPeerDiscoveryTest {
     void mapsAdvertisementToServiceInfoAndBack() {
         PeerAdvertisement advertisement = new PeerAdvertisement(
                 NodeId.of("node-a"), DeviceId.of("device-a"), GROUP,
-                FrameCodec.PROTOCOL_VERSION, "fingerprint", 47800);
+                FrameCodec.PROTOCOL_VERSION, "fingerprint", 47800, 47801);
 
         ServiceInfo info = JmDnsPeerDiscovery.serviceInfoFor(advertisement);
 
@@ -38,7 +38,35 @@ class JmDnsPeerDiscoveryTest {
         assertEquals(advertisement.protocolVersion(), peer.protocolVersion());
         assertEquals(advertisement.fingerprint(), peer.fingerprint());
         assertEquals(advertisement.port(), peer.port());
+        assertEquals(47801, peer.pairingPort());
         assertTrue(peer.addresses().isEmpty());
+    }
+
+    @Test
+    void defaultsMissingPairingPortToZero() {
+        ServiceInfo info = ServiceInfo.create(JmDnsPeerDiscovery.SERVICE_TYPE, "device-a",
+                1234, 0, 0,
+                Map.of("nodeId", "node-a", "deviceId", "device-a", "groupId", GROUP.value(),
+                        "protocolVersion", "1", "fingerprint", "fp"));
+
+        DiscoveredPeer peer = JmDnsPeerDiscovery.toPeer(info);
+
+        assertNotNull(peer);
+        assertEquals(0, peer.pairingPort());
+    }
+
+    @Test
+    void defaultsInvalidPairingPortToZero() {
+        ServiceInfo info = ServiceInfo.create(JmDnsPeerDiscovery.SERVICE_TYPE, "device-a",
+                1234, 0, 0,
+                Map.of("nodeId", "node-a", "deviceId", "device-a", "groupId", GROUP.value(),
+                        "protocolVersion", "1", "fingerprint", "fp",
+                        "pairingPort", "not-a-port"));
+
+        DiscoveredPeer peer = JmDnsPeerDiscovery.toPeer(info);
+
+        assertNotNull(peer);
+        assertEquals(0, peer.pairingPort());
     }
 
     @Test

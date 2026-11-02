@@ -17,6 +17,7 @@ public abstract class SqlMetadataStore implements MetadataStore {
     private final ConflictRepository conflicts;
     private final TriggerRepository triggers;
     private final SyncRunRepository runs;
+    private final CursorRepository cursors;
 
     protected SqlMetadataStore(SqlSession session) {
         this.session = Objects.requireNonNull(session, "session");
@@ -29,6 +30,7 @@ public abstract class SqlMetadataStore implements MetadataStore {
         this.conflicts = new SqlConflictRepository(session);
         this.triggers = new SqlTriggerRepository(session);
         this.runs = new SqlSyncRunRepository(session);
+        this.cursors = new SqlCursorRepository(session);
     }
 
     @Override
@@ -91,5 +93,10 @@ public abstract class SqlMetadataStore implements MetadataStore {
     @Override
     public SyncRunRepository runs() {
         return runs;
+    }
+
+    @Override
+    public CursorRepository cursors() {
+        return cursors;
     }
 }

@@ -48,6 +48,6 @@ class PresenceTrackerTest {
 
     private static DiscoveredPeer peer(String nodeId, String deviceId, GroupId groupId) {
         return new DiscoveredPeer(NodeId.of(nodeId), DeviceId.of(deviceId), groupId,
-                1, "fingerprint", List.of(), 47800);
+                1, "fingerprint", List.of(), 47800, 0);
     }
 }

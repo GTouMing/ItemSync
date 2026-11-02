@@ -53,7 +53,8 @@ public final class RemoteSyncServer implements FrameHandler {
             return;
         }
 
-        List<ManifestEntry> entries = manifests.manifest(rootId, request.since());
+        ManifestSnapshot snapshot = manifests.manifest(rootId, request.sinceSequence());
+        List<ManifestEntry> entries = snapshot.entries();
         for (int start = 0; start < entries.size(); start += PAGE_SIZE) {
             int end = Math.min(start + PAGE_SIZE, entries.size());
             List<ManifestEntry> page = entries.subList(start, end);
@@ -62,7 +63,7 @@ public final class RemoteSyncServer implements FrameHandler {
                     FramePayloads.encodeManifestPage(new ManifestPage(page, cursor))));
         }
         connection.send(new Frame(FrameType.MANIFEST_END,
-                FramePayloads.encodeManifestEnd(new ManifestEnd(entries.size()))));
+                FramePayloads.encodeManifestEnd(new ManifestEnd(entries.size(), snapshot.sequence()))));
     }
 
     private static void sendError(FrameConnection connection, Exception failure) {

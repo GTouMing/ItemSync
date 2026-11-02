@@ -11,6 +11,7 @@ import com.google.gson.JsonParseException;
 import com.google.gson.JsonParser;
 import github.gtouming.itemsync.domain.error.ErrorCode;
 import github.gtouming.itemsync.domain.identity.BlobHash;
+import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
@@ -154,10 +155,41 @@ public final class FramePayloads {
                 integer(json, "queuePosition"));
     }
 
+    public static byte[] encodePairingStatusRequest(PairingStatusRequest request) {
+        JsonObject json = new JsonObject();
+        json.addProperty("groupId", request.groupId().value());
+        return toBytes(json);
+    }
+
+    public static PairingStatusRequest decodePairingStatusRequest(byte[] payload) {
+        return new PairingStatusRequest(GroupId.parse(string(parseObject(payload), "groupId")));
+    }
+
+    public static byte[] encodePairingStatusResponse(PairingStatusResponse response) {
+        JsonObject json = new JsonObject();
+        json.addProperty("groupId", response.groupId().value());
+        json.addProperty("nodeId", response.nodeId().value());
+        json.addProperty("deviceId", response.deviceId().value());
+        json.addProperty("fingerprint", response.fingerprint());
+        json.addProperty("trustsPeer", response.trustsPeer());
+        return toBytes(json);
+    }
+
+    public static PairingStatusResponse decodePairingStatusResponse(byte[] payload) {
+        JsonObject json = parseObject(payload);
+        return new PairingStatusResponse(
+                GroupId.parse(string(json, "groupId")),
+                NodeId.of(string(json, "nodeId")),
+                DeviceId.of(string(json, "deviceId")),
+                string(json, "fingerprint"),
+                bool(json, "trustsPeer"));
+    }
+
     public static byte[] encodeManifestRequest(ManifestRequest request) {
         JsonObject json = new JsonObject();
         json.addProperty("rootId", request.rootId().value());
         json.add("since", vectorToJson(request.since()));
+        json.addProperty("sinceSequence", request.sinceSequence());
         if (request.ignoreHash() != null) {
             json.addProperty("ignoreHash", request.ignoreHash());
         }
@@ -169,6 +201,7 @@ public final class FramePayloads {
         return new ManifestRequest(
                 SyncRootId.of(string(json, "rootId")),
                 vectorFromJson(object(json, "since")),
+                optionalNumber(json, "sinceSequence"),
                 optionalString(json, "ignoreHash"));
     }
 
@@ -201,11 +234,13 @@ public final class FramePayloads {
     public static byte[] encodeManifestEnd(ManifestEnd end) {
         JsonObject json = new JsonObject();
         json.addProperty("totalEntries", end.totalEntries());
+        json.addProperty("sequence", end.sequence());
         return toBytes(json);
     }
 
     public static ManifestEnd decodeManifestEnd(byte[] payload) {
-        return new ManifestEnd(integer(parseObject(payload), "totalEntries"));
+        JsonObject json = parseObject(payload);
+        return new ManifestEnd(integer(json, "totalEntries"), optionalNumber(json, "sequence"));
     }
 
     private static byte[] toBytes(JsonObject json) {
@@ -332,6 +367,14 @@ public final class FramePayloads {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("field is out of range: " + name + "=" + raw, e);
         }
+    }
+
+    private static long optionalNumber(JsonObject json, String name) {
+        JsonElement element = json.get(name);
+        if (element == null || element.isJsonNull()) {
+            return 0L;
+        }
+        return number(json, name);
     }
 
     private static int integer(JsonObject json, String name) {

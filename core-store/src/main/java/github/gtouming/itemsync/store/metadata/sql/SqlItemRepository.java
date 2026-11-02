@@ -37,6 +37,8 @@ final class SqlItemRepository implements ItemRepository {
                     item.id().value(), item.rootId().value(), item.logicalPath().value(), item.kind().name(),
                     item.currentVersion() == null ? null : item.currentVersion().value(), item.deletedAt());
             replaceVector(item.rootId(), item.logicalPath(), item.vector());
+            session.update("INSERT OR REPLACE INTO item_change(root_id, logical_path) VALUES (?, ?)",
+                    item.rootId().value(), item.logicalPath().value());
         });
     }
 
@@ -85,6 +87,36 @@ final class SqlItemRepository implements ItemRepository {
                 ? items.get(items.size() - 1).logicalPath().value()
                 : null;
         return new ItemPage(Compat.copyList(items), nextCursor);
+    }
+
+    @Override
+    public List<ChangedItem> changedSince(SyncRootId rootId, long sinceExclusive, long untilInclusive) {
+        if (sinceExclusive < 0) {
+            throw new IllegalArgumentException("sinceExclusive must not be negative");
+        }
+        String sql = "SELECT i.id, i.root_id, i.logical_path, i.kind, i.current_version_id, i.deleted_at, "
+                + "c.seq AS change_seq, "
+                + "v.node_id AS vector_node_id, v.counter AS vector_counter "
+                + "FROM item_change c "
+                + "JOIN item i ON i.root_id = c.root_id AND i.logical_path = c.logical_path "
+                + "LEFT JOIN item_vector v ON v.root_id = i.root_id AND v.logical_path = i.logical_path "
+                + "WHERE c.root_id = ? AND c.seq > ? AND c.seq <= ? "
+                + "ORDER BY c.seq, v.node_id";
+
+        List<ChangedItem> items = new ArrayList<>();
+        ChangedItemAccumulator accumulator = new ChangedItemAccumulator(items);
+        session.queryEach(sql, accumulator::accept,
+                rootId.value(), sinceExclusive, untilInclusive);
+        accumulator.finish();
+        return Compat.copyList(items);
+    }
+
+    @Override
+    public long currentSequence(SyncRootId rootId) {
+        return session.queryOne(
+                "SELECT COALESCE(MAX(seq), 0) AS max_seq FROM item_change WHERE root_id = ?",
+                cursor -> cursor.getLong("max_seq"),
+                rootId.value()).orElse(0L);
     }
 
     @Override
@@ -149,6 +181,40 @@ final class SqlItemRepository implements ItemRepository {
                     currentVersionId == null ? null : VersionId.of(currentVersionId),
                     vector,
                     deletedAt);
+        }
+    }
+
+    private static final class ChangedItemAccumulator {
+
+        private final List<ChangedItem> items;
+        private String currentPath;
+        private long currentSequence;
+        private ItemBuilder builder;
+
+        private ChangedItemAccumulator(List<ChangedItem> items) {
+            this.items = items;
+        }
+
+        void accept(RowCursor cursor) {
+            String path = cursor.getString("logical_path");
+            if (!path.equals(currentPath)) {
+                finish();
+                builder = new ItemBuilder(mapRow(cursor));
+                currentPath = path;
+                currentSequence = cursor.getLong("change_seq");
+            }
+            String node = cursor.getString("vector_node_id");
+            if (node != null && builder != null) {
+                builder.counters.put(NodeId.of(node), cursor.getLong("vector_counter"));
+            }
+        }
+
+        void finish() {
+            if (builder != null) {
+                items.add(new ChangedItem(builder.build(), currentSequence));
+                builder = null;
+                currentPath = null;
+            }
         }
     }
 

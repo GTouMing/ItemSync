@@ -33,6 +33,31 @@ git diff --check
 
 共享模块的改动还应运行对应模块的测试，例如 `:core-domain:test`、`:core-sync:test` 或 `:core-transport:test`。涉及 Android 运行时行为时，单元测试或 APK 构建成功不能代替设备验证；无法验证时在变更说明中记录限制，不将其描述为已通过。
 
+## 持续集成
+
+[CI 工作流](<.github/workflows/ci.yml>)使用 GitHub 托管的 `windows-2025` 运行器和 Temurin JDK 21，触发条件为：推送到 `master`、目标分支为 `master` 的合并请求，以及手动触发。
+
+流程使用镜像自带的 Android SDK 命令行工具，确保 API 36 平台已安装，然后在仓库根目录执行：
+
+```powershell
+.\gradlew.bat test :android:assembleDebug --no-daemon --stacktrace --console=plain
+```
+
+- 这检查 Gradle 测试及 Android 调试 APK 构建，不包含桌面应用镜像打包、模拟器或真机验证。
+- 同一分支或合并请求的新运行会取消旧运行；单次运行最多 30 分钟。
+- 仓库权限仅为 `contents: read`，检出代码时不保留 Git 凭据；不使用发布签名密钥、不配置发布流程，也不上传 APK。调试 APK 由 Android 工具链使用调试密钥签名。
+- 使用普通 `pull_request` 事件，不在 `pull_request_target` 的受信上下文执行合并请求代码。
+- 首轮暂不配置依赖缓存，避免同时引入缓存策略；下载依赖需要联网。本机代理不是 CI 的前置条件，也不要把本机代理地址写入工作流。
+
+工作流仅引入以下两项外部 Action，并在配置中固定完整提交 SHA：
+
+| Action               | 版本与用途                                                                    | 许可证                                                                                             |
+|----------------------|-------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------|
+| `actions/checkout`   | [v7.0.1](https://github.com/actions/checkout/releases/tag/v7.0.1)，检出代码   | [MIT](https://github.com/actions/checkout/blob/3d3c42e5aac5ba805825da76410c181273ba90b1/LICENSE)   |
+| `actions/setup-java` | [v6.1.0](https://github.com/actions/setup-java/releases/tag/v6.1.0)，配置 JDK | [MIT](https://github.com/actions/setup-java/blob/b843ebf9b913146b38da2eaa7aeddf76074ae1ad/LICENSE) |
+
+固定 SHA 可避免标签移动，但不能消除上游代码缺陷。升级时应同时核对版本、提交、许可证及安全公告；此处的许可核对限于 Action 本身，不代表已审计全部传递依赖。
+
 ## 提交与合并请求
 
 - 一个提交只处理一个逻辑变更，采用 `feat:`、`fix:`、`docs:`、`test:`、`refactor:` 或 `chore:` 等现有提交前缀。

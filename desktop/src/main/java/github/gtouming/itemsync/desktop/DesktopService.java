@@ -10,7 +10,6 @@ import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.Trigger;
 import github.gtouming.itemsync.platform.desktop.NioDirectoryWatcher;
 import github.gtouming.itemsync.platform.desktop.ProcessWatcher;
-import github.gtouming.itemsync.domain.security.PairingCode;
 import github.gtouming.itemsync.store.blob.BlobStore;
 import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.store.metadata.jdbc.JdbcMetadataStore;
@@ -20,6 +19,7 @@ import github.gtouming.itemsync.sync.engine.SyncRunResult;
 import github.gtouming.itemsync.sync.engine.node.SyncNode;
 import github.gtouming.itemsync.sync.state.ConflictResolver;
 import github.gtouming.itemsync.sync.state.VersionHistoryService;
+import github.gtouming.itemsync.sync.trust.PeerTrustCoordinator;
 import github.gtouming.itemsync.sync.trigger.TriggerConfig;
 import github.gtouming.itemsync.sync.trigger.TriggerConfigCodec;
 import github.gtouming.itemsync.sync.trigger.TriggerEngine;
@@ -29,20 +29,16 @@ import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.net.Inet4Address;
-import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 
 public final class DesktopService implements AutoCloseable {
@@ -54,14 +50,13 @@ public final class DesktopService implements AutoCloseable {
     private final TriggerEngine triggerEngine;
     private final ConflictResolver conflictResolver;
     private final VersionHistoryService history;
-    private final TrustStore trustStore;
-    private final Set<String> connectedPeers = ConcurrentHashMap.newKeySet();
+    private final PeerTrustCoordinator peerTrust;
     private final List<AutoCloseable> watchers;
 
     private DesktopService(DesktopConfig config, TlsIdentity identity, JdbcMetadataStore store,
                            SyncNode node, TriggerEngine triggerEngine,
                            ConflictResolver conflictResolver, VersionHistoryService history,
-                           TrustStore trustStore, List<AutoCloseable> watchers) {
+                           PeerTrustCoordinator peerTrust, List<AutoCloseable> watchers) {
         this.config = config;
         this.identity = identity;
         this.store = store;
@@ -69,7 +64,7 @@ public final class DesktopService implements AutoCloseable {
         this.triggerEngine = triggerEngine;
         this.conflictResolver = conflictResolver;
         this.history = history;
-        this.trustStore = trustStore;
+        this.peerTrust = peerTrust;
         this.watchers = watchers;
     }
 
@@ -84,36 +79,25 @@ public final class DesktopService implements AutoCloseable {
 
         TrustStore trustStore = new TrustStore(config.dataDir());
         trustStore.retainOnly(config.group());
-        for (DesktopConfig.PeerTarget peer : config.peers()) {
-            trustStore.trust(config.group(), peer.fingerprint());
-        }
-        if (!"none".equals(config.expectedClientFingerprint())) {
-            trustStore.trust(config.group(), config.expectedClientFingerprint());
-        }
 
         JdbcMetadataStore store = openStore(config.dataDir());
         PhysicalPathResolver physical = resolver();
         BlobStore blobs = new FileSystemBlobStore(config.dataDir());
-        Set<String> acceptedClients = new LinkedHashSet<>(config.expectedClientFingerprints());
-        for (DesktopConfig.PeerTarget peer : config.peers()) {
-            acceptedClients.add(peer.fingerprint());
-        }
-        if (acceptedClients.isEmpty()) {
-            acceptedClients.add("none");
-        }
+        // SyncNode and PinnedTrustManager reject an empty set; "none" never matches a
+        // certificate. Trusted peers are added dynamically through the device list.
+        Set<String> acceptedClients = Set.of("none");
         SyncNode node;
         try {
             node = new SyncNode(nodeId, config.group(), config.rootId(), config.root(), store,
                     blobs, physical, identity, deviceId,
                     acceptedClients, config.port(),
-                    config.dataDir().resolve("transfer"));
-            for (DesktopConfig.PeerTarget peer : config.peers()) {
-                addPeer(node, peer);
-            }
+                    config.dataDir().resolve("transfer"), trustStore::isTrusted);
         } catch (Exception e) {
             store.close();
             throw e;
         }
+        PeerTrustCoordinator peerTrust = new PeerTrustCoordinator(
+                config.group(), identity, node, trustStore);
 
         ConflictResolver conflictResolver = new ConflictResolver(config.root(), store, physical,
                 config.rootId(), nodeId, Instant::now);
@@ -143,100 +127,59 @@ public final class DesktopService implements AutoCloseable {
         } catch (Exception e) {
             watchers.forEach(DesktopService::closeQuietly);
             engine.close();
+            peerTrust.close();
             node.close();
             store.close();
             throw e;
         }
 
         return new DesktopService(config, identity, store, node, engine, conflictResolver,
-                history, trustStore, List.copyOf(watchers));
+                history, peerTrust, List.copyOf(watchers));
     }
 
     public List<SyncRunResult> syncNow() throws IOException {
-        reconcileTrustedPeers();
+        peerTrust.reconcileTrustedPeers();
         return node.syncNow();
     }
 
     public List<PresenceTracker.Presence> onlinePeers() {
-        List<PresenceTracker.Presence> peers = node.onlinePeers();
-        retainOnlinePeers(peers);
-        for (PresenceTracker.Presence presence : peers) {
-            if (isTrusted(presence.peer())) {
-                try {
-                    connect(presence.peer());
-                } catch (IOException ignored) {
-                    // the peer has not trusted us yet, or is temporarily unreachable
-                }
-            }
-        }
-        return peers;
+        return peerTrust.onlinePeers();
+    }
+
+    public List<PeerTrustCoordinator.PeerView> peerViews() {
+        return peerTrust.peerViews();
+    }
+
+    public List<PeerTrustCoordinator.PeerView> peerViews(boolean forceRefresh) {
+        return peerTrust.peerViews(forceRefresh);
     }
 
     public boolean isTrusted(DiscoveredPeer peer) {
-        return trustStore.isTrusted(config.group(), peer.fingerprint());
+        return peerTrust.isTrusted(peer);
     }
 
     public boolean isConnected(DiscoveredPeer peer) {
-        return connectedPeers.contains(peer.fingerprint().toLowerCase(Locale.ROOT));
+        return peerTrust.isConnected(peer);
     }
 
     public String pairingCode(DiscoveredPeer peer) {
-        return PairingCode.between(config.group(), identity.fingerprint(), peer.fingerprint());
+        return peerTrust.pairingCode(peer);
     }
 
     public void trustPeer(DiscoveredPeer peer) throws IOException {
-        trustStore.trust(config.group(), peer.fingerprint());
-        node.allowClient(peer.fingerprint());
-        connect(peer);
+        peerTrust.trustPeer(peer);
     }
 
     public void untrustPeer(DiscoveredPeer peer) throws IOException {
-        trustStore.untrust(config.group(), peer.fingerprint());
-        node.revokeClient(peer.fingerprint());
-        node.removePeer(peer.nodeId());
-        connectedPeers.remove(peer.fingerprint().toLowerCase(Locale.ROOT));
+        peerTrust.untrustPeer(peer);
     }
 
     public void reconcileTrustedPeers() {
-        List<PresenceTracker.Presence> peers = node.onlinePeers();
-        retainOnlinePeers(peers);
-        for (PresenceTracker.Presence presence : peers) {
-            if (isTrusted(presence.peer())) {
-                try {
-                    connect(presence.peer());
-                } catch (IOException ignored) {
-                    // retry on the next background pass
-                }
-            }
-        }
+        peerTrust.reconcileTrustedPeers();
     }
 
-    private void retainOnlinePeers(List<PresenceTracker.Presence> peers) {
-        Set<String> online = new LinkedHashSet<>();
-        for (PresenceTracker.Presence presence : peers) {
-            online.add(presence.peer().fingerprint().toLowerCase(Locale.ROOT));
-        }
-        connectedPeers.retainAll(online);
-    }
-
-    private void connect(DiscoveredPeer peer) throws IOException {
-        if (!isTrusted(peer)) {
-            return;
-        }
-        String fingerprint = peer.fingerprint().toLowerCase(Locale.ROOT);
-        if (connectedPeers.contains(fingerprint)) {
-            return;
-        }
-        InetAddress address = peer.addresses().stream()
-                .filter(candidate -> candidate instanceof Inet4Address)
-                .findFirst()
-                .orElseGet(() -> peer.addresses().stream().findFirst().orElse(null));
-        if (address == null) {
-            throw new IOException("no address for peer " + peer.deviceId().value());
-        }
-        node.allowClient(peer.fingerprint());
-        node.addPeer(peer.nodeId(), address.getHostAddress(), peer.port(), peer.fingerprint());
-        connectedPeers.add(fingerprint);
+    public void refreshRemoteTrust() {
+        peerTrust.refreshRemoteTrust();
     }
 
     public List<ConflictResolver.ConflictView> openConflicts() {
@@ -257,6 +200,7 @@ public final class DesktopService implements AutoCloseable {
         } catch (UncheckedIOException e) {
             throw e.getCause();
         }
+        node.refreshManifest();
     }
 
     public List<VersionHistoryService.ItemView> historyItems() {
@@ -280,6 +224,7 @@ public final class DesktopService implements AutoCloseable {
         } catch (UncheckedIOException e) {
             throw e.getCause();
         }
+        node.refreshManifest();
     }
 
     public Status status() {
@@ -290,7 +235,7 @@ public final class DesktopService implements AutoCloseable {
             int conflicts = store.conflicts().findOpen(1000).size();
             IOException error = node.lastError() != null ? node.lastError() : triggerEngine.lastError();
             return new Status(node.nodeId(), identity.fingerprint(), node.port(), config.root(),
-                    config.peers().size(), lastRun, conflicts, error);
+                    lastRun, conflicts, error);
         });
     }
 
@@ -298,11 +243,12 @@ public final class DesktopService implements AutoCloseable {
     public void close() {
         watchers.forEach(DesktopService::closeQuietly);
         triggerEngine.close();
+        peerTrust.close();
         node.close();
         store.close();
     }
 
-    public record Status(NodeId nodeId, String fingerprint, int port, Path root, int peers,
+    public record Status(NodeId nodeId, String fingerprint, int port, Path root,
                          SyncRun lastRun, int openConflicts, IOException lastError) {
     }
 
@@ -324,27 +270,6 @@ public final class DesktopService implements AutoCloseable {
         if (!Files.isRegularFile(file)) {
             Files.writeString(file, UUID.randomUUID().toString());
         }
-    }
-
-    private static void addPeer(SyncNode node, DesktopConfig.PeerTarget peer) throws IOException {
-        NodeId peerNodeId = NodeId.of("peer-" + peer.fingerprint().substring(0,
-                Math.min(8, peer.fingerprint().length())));
-        IOException lastFailure = null;
-        for (int attempt = 0; attempt < 10; attempt++) {
-            try {
-                node.addPeer(peerNodeId, peer.host(), peer.port(), peer.fingerprint());
-                return;
-            } catch (IOException e) {
-                lastFailure = e;
-                try {
-                    Thread.sleep(500);
-                } catch (InterruptedException interrupted) {
-                    Thread.currentThread().interrupt();
-                    throw e;
-                }
-            }
-        }
-        throw lastFailure;
     }
 
     private static JdbcMetadataStore openStore(Path dataDir) throws Exception {

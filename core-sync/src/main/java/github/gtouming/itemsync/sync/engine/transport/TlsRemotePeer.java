@@ -85,7 +85,7 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
     }
 
     @Override
-    public List<ManifestEntry> manifest(SyncRootId rootId, VersionVector since) throws IOException {
+    public ManifestSnapshot manifest(SyncRootId rootId, long sinceSequence) throws IOException {
         ManifestCollector collector = new ManifestCollector(timeout);
         synchronized (manifestLock) {
             if (manifestCollector != null) {
@@ -95,7 +95,8 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
         }
         try {
             connection().send(new Frame(FrameType.MANIFEST_REQUEST,
-                    FramePayloads.encodeManifestRequest(new ManifestRequest(rootId, since, null))));
+                    FramePayloads.encodeManifestRequest(new ManifestRequest(
+                            rootId, VersionVector.empty(), sinceSequence, null))));
             return collector.await();
         } finally {
             synchronized (manifestLock) {
@@ -207,7 +208,7 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
     private static final class ManifestCollector {
 
         private final List<ManifestEntry> entries = new ArrayList<>();
-        private final CompletableFuture<List<ManifestEntry>> future = new CompletableFuture<>();
+        private final CompletableFuture<ManifestSnapshot> future = new CompletableFuture<>();
         private final long timeoutMillis;
 
         private ManifestCollector(Duration timeout) {
@@ -224,14 +225,14 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
                         + ", received " + entries.size()));
                 return;
             }
-            future.complete(Compat.copyList(entries));
+            future.complete(new ManifestSnapshot(Compat.copyList(entries), end.sequence()));
         }
 
         private void fail(IOException failure) {
             future.completeExceptionally(failure);
         }
 
-        private List<ManifestEntry> await() throws IOException {
+        private ManifestSnapshot await() throws IOException {
             try {
                 return future.get(timeoutMillis, TimeUnit.MILLISECONDS);
             } catch (TimeoutException e) {

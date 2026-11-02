@@ -11,7 +11,7 @@ import java.util.Objects;
 
 public record DiscoveredPeer(NodeId nodeId, DeviceId deviceId, GroupId groupId,
                              int protocolVersion, String fingerprint,
-                             List<InetAddress> addresses, int port) {
+                             List<InetAddress> addresses, int port, int pairingPort) {
 
     public DiscoveredPeer {
         Objects.requireNonNull(nodeId, "nodeId");
@@ -19,5 +19,11 @@ public record DiscoveredPeer(NodeId nodeId, DeviceId deviceId, GroupId groupId,
         Objects.requireNonNull(groupId, "groupId");
         Objects.requireNonNull(fingerprint, "fingerprint");
         addresses = Compat.copyList(Objects.requireNonNull(addresses, "addresses"));
+        if (port <= 0 || port > 65535) {
+            throw new IllegalArgumentException("port out of range: " + port);
+        }
+        if (pairingPort < 0 || pairingPort > 65535) {
+            throw new IllegalArgumentException("pairing port out of range: " + pairingPort);
+        }
     }
 }

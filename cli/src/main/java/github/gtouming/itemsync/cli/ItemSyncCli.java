@@ -52,22 +52,26 @@ public final class ItemSyncCli {
 
     public static void main(String[] args) {
         try {
-            CliArguments arguments = CliArguments.parse(args);
-            switch (arguments.command()) {
-                case "init" -> init(arguments);
-                case "fingerprint" -> fingerprint(arguments);
-                case "serve" -> serve(arguments);
-                case "sync" -> sync(arguments);
-                case "trigger-add" -> triggerAdd(arguments);
-                case "trigger-list" -> triggerList(arguments);
-                case "trigger-remove" -> triggerRemove(arguments);
-                case "run-list" -> runList(arguments);
-                case "help", "--help" -> usage();
-                default -> throw new IllegalArgumentException("unknown command: " + arguments.command());
-            }
+            run(args);
         } catch (Exception e) {
             System.err.println("error: " + e.getMessage());
             System.exit(1);
+        }
+    }
+
+    static void run(String[] args) throws Exception {
+        CliArguments arguments = CliArguments.parse(args);
+        switch (arguments.command()) {
+            case "init" -> init(arguments);
+            case "fingerprint" -> fingerprint(arguments);
+            case "serve" -> serve(arguments);
+            case "sync" -> sync(arguments);
+            case "trigger-add" -> triggerAdd(arguments);
+            case "trigger-list" -> triggerList(arguments);
+            case "trigger-remove" -> triggerRemove(arguments);
+            case "run-list" -> runList(arguments);
+            case "help", "--help" -> usage();
+            default -> throw new IllegalArgumentException("unknown command: " + arguments.command());
         }
     }
 
