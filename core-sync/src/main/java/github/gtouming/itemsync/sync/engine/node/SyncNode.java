@@ -23,10 +23,14 @@ import github.gtouming.itemsync.sync.plan.SyncPlanner;
 import github.gtouming.itemsync.sync.state.LocalReconciler;
 import github.gtouming.itemsync.sync.trigger.TriggerEngine;
 import github.gtouming.itemsync.transport.frame.Frame;
+import github.gtouming.itemsync.transport.frame.FrameCodec;
 import github.gtouming.itemsync.transport.frame.FramePayloads;
 import github.gtouming.itemsync.transport.frame.FrameType;
 import github.gtouming.itemsync.transport.frame.Notify;
 import github.gtouming.itemsync.transport.frame.NotifyAck;
+import github.gtouming.itemsync.transport.discovery.JmDnsPeerDiscovery;
+import github.gtouming.itemsync.transport.discovery.PeerAdvertisement;
+import github.gtouming.itemsync.transport.discovery.PresenceTracker;
 import github.gtouming.itemsync.transport.net.FrameConnection;
 import github.gtouming.itemsync.transport.net.TlsTransportServer;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
@@ -58,6 +62,8 @@ public final class SyncNode implements AutoCloseable {
     private final SyncEngine engine;
     private final RemoteSyncServer remoteSyncServer;
     private final TlsTransportServer server;
+    private final PresenceTracker presence;
+    private final JmDnsPeerDiscovery discovery;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "itemsync-sync-worker");
         thread.setDaemon(true);
@@ -112,6 +118,27 @@ public final class SyncNode implements AutoCloseable {
                 this::onInboundFrame);
         this.server.start();
         this.transferTempDir = tempDir;
+
+        PresenceTracker presenceTracker = new PresenceTracker(groupId, nodeId, Instant::now);
+        JmDnsPeerDiscovery peerDiscovery = null;
+        try {
+            peerDiscovery = new JmDnsPeerDiscovery();
+            peerDiscovery.addListener(presenceTracker);
+            peerDiscovery.start();
+            peerDiscovery.advertise(new PeerAdvertisement(nodeId, deviceId, groupId,
+                    FrameCodec.PROTOCOL_VERSION, identity.fingerprint(), server.port()));
+        } catch (IOException | RuntimeException e) {
+            if (peerDiscovery != null) {
+                peerDiscovery.close();
+                peerDiscovery = null;
+            }
+        }
+        this.presence = presenceTracker;
+        this.discovery = peerDiscovery;
+    }
+
+    public List<PresenceTracker.Presence> onlinePeers() {
+        return presence.online();
     }
 
     public int port() {
@@ -196,6 +223,9 @@ public final class SyncNode implements AutoCloseable {
         }
         peers.clear();
         peersByFingerprint.clear();
+        if (discovery != null) {
+            discovery.close();
+        }
         server.close();
         worker.shutdownNow();
         try {
