@@ -44,13 +44,7 @@ public final class SyncPlanner {
         Objects.requireNonNull(local, "local");
         Objects.requireNonNull(remoteEntries, "remoteEntries");
 
-        Map<LogicalPath, ManifestEntry> remote = new LinkedHashMap<>();
-        for (ManifestEntry entry : remoteEntries) {
-            if (remote.put(entry.path(), entry) != null) {
-                throw new IllegalArgumentException("duplicate remote entry: " + entry.path());
-            }
-        }
-
+        Map<LogicalPath, ManifestEntry> remote = remoteMap(remoteEntries);
         Set<LogicalPath> paths = new TreeSet<>(Comparator.comparing(LogicalPath::value));
         paths.addAll(local.keySet());
         paths.addAll(remote.keySet());
@@ -63,5 +57,32 @@ public final class SyncPlanner {
             }
         }
         return Compat.copyList(actions);
+    }
+
+    public List<SyncAction> planPartial(Map<LogicalPath, ManifestEntry> local,
+                                        Collection<ManifestEntry> remoteEntries) {
+        Objects.requireNonNull(local, "local");
+        Objects.requireNonNull(remoteEntries, "remoteEntries");
+
+        Map<LogicalPath, ManifestEntry> remote = remoteMap(remoteEntries);
+        List<SyncAction> actions = new ArrayList<>();
+        for (ManifestEntry remoteEntry : remote.values()) {
+            SyncAction action = decide(local.get(remoteEntry.path()), remoteEntry);
+            if (!(action instanceof SyncAction.Skip)) {
+                actions.add(action);
+            }
+        }
+        return Compat.copyList(actions);
+    }
+
+    private static Map<LogicalPath, ManifestEntry> remoteMap(
+            Collection<ManifestEntry> remoteEntries) {
+        Map<LogicalPath, ManifestEntry> remote = new LinkedHashMap<>();
+        for (ManifestEntry entry : remoteEntries) {
+            if (remote.put(entry.path(), entry) != null) {
+                throw new IllegalArgumentException("duplicate remote entry: " + entry.path());
+            }
+        }
+        return remote;
     }
 }

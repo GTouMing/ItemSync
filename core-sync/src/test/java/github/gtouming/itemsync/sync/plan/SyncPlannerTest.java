@@ -111,6 +111,21 @@ class SyncPlannerTest {
     }
 
     @Test
+    void planPartialIgnoresLocalPathsMissingFromRemoteChanges() {
+        Map<LogicalPath, ManifestEntry> local = Map.of(
+                LogicalPath.of("a.txt"), live("a.txt", HASH_A, vector(NODE_A, 1)),
+                LogicalPath.of("local-only.txt"), live("local-only.txt", HASH_B, vector(NODE_A, 1)),
+                LogicalPath.of("b.txt"), live("b.txt", HASH_A, vector(NODE_A, 1)));
+
+        List<SyncAction> actions = planner.planPartial(local, List.of(
+                live("b.txt", HASH_B, vector(NODE_A, 2))));
+
+        assertEquals(List.of("b.txt"),
+                actions.stream().map(action -> action.path().value()).toList());
+        assertInstanceOf(SyncAction.Pull.class, actions.get(0));
+    }
+
+    @Test
     void rejectsDuplicateRemoteEntries() {
         assertThrows(IllegalArgumentException.class, () -> planner.plan(
                 Map.of(),

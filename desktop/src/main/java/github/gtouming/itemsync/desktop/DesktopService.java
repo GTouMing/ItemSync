@@ -200,6 +200,7 @@ public final class DesktopService implements AutoCloseable {
         } catch (UncheckedIOException e) {
             throw e.getCause();
         }
+        node.refreshManifest();
     }
 
     public List<VersionHistoryService.ItemView> historyItems() {
@@ -223,6 +224,7 @@ public final class DesktopService implements AutoCloseable {
         } catch (UncheckedIOException e) {
             throw e.getCause();
         }
+        node.refreshManifest();
     }
 
     public Status status() {

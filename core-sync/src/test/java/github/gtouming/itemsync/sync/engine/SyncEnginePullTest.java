@@ -12,6 +12,7 @@ import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.store.metadata.jdbc.JdbcMetadataStore;
 import github.gtouming.itemsync.sync.apply.LocalApplier;
 import github.gtouming.itemsync.sync.apply.PathResolvers;
+import github.gtouming.itemsync.sync.engine.transport.ManifestSnapshot;
 import github.gtouming.itemsync.sync.plan.SyncPlanner;
 import github.gtouming.itemsync.sync.state.LocalReconciler;
 import org.junit.jupiter.api.AfterEach;
@@ -26,6 +27,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -147,6 +150,67 @@ class SyncEnginePullTest {
                 .vector();
     }
 
+    @Test
+    void advancesPullCursorAndUsesIncrementalPlanning() throws Exception {
+        b.write("local-only.txt", "local");
+        AtomicLong requestedSince = new AtomicLong(-1);
+        AtomicReference<List<ManifestEntry>> remote = new AtomicReference<>(List.of());
+
+        RemotePeer peer = new RemotePeer() {
+            @Override
+            public NodeId nodeId() {
+                return NODE_A;
+            }
+
+            @Override
+            public ManifestSnapshot manifest(SyncRootId rootId, long sinceSequence) {
+                requestedSince.set(sinceSequence);
+                return new ManifestSnapshot(remote.get(), sinceSequence == 0 ? 42L : 43L);
+            }
+
+            @Override
+            public InputStream openBlob(BlobHash hash) {
+                throw new AssertionError("no blob expected");
+            }
+        };
+
+        assertEquals(1, b.cursoredEngine.pullOnce(peer).pendingPush());
+        assertEquals(0L, requestedSince.get());
+        assertEquals(42L, b.store.cursors().pullSequence(ROOT, NODE_A));
+
+        assertEquals(0, b.cursoredEngine.pullOnce(peer).pendingPush());
+        assertEquals(42L, requestedSince.get());
+        assertEquals(43L, b.store.cursors().pullSequence(ROOT, NODE_A));
+    }
+
+    @Test
+    void retriesFullManifestWhenServerSequenceIsBehindTheCursor() throws Exception {
+        b.store.cursors().updatePull(ROOT, NODE_A, 42L);
+        List<Long> requested = new java.util.ArrayList<>();
+        RemotePeer peer = new RemotePeer() {
+            @Override
+            public NodeId nodeId() {
+                return NODE_A;
+            }
+
+            @Override
+            public ManifestSnapshot manifest(SyncRootId rootId, long sinceSequence) {
+                requested.add(sinceSequence);
+                return new ManifestSnapshot(List.of(), 10L);
+            }
+
+            @Override
+            public InputStream openBlob(BlobHash hash) {
+                throw new AssertionError("no blob expected");
+            }
+        };
+
+        b.cursoredEngine.pullOnce(peer);
+
+        assertEquals(List.of(42L, 0L), requested);
+        assertEquals(10L, b.store.cursors().pullSequence(ROOT, NODE_A));
+    }
+
     private static final class NodeFixture implements AutoCloseable {
 
         private final Path root;
@@ -155,6 +219,7 @@ class SyncEnginePullTest {
         private final LocalReconciler reconciler;
         private final LocalApplier applier;
         private final SyncEngine engine;
+        private final SyncEngine cursoredEngine;
         private final NodeId nodeId;
 
         private NodeFixture(Path base, NodeId nodeId, DeviceId deviceId) throws Exception {
@@ -169,6 +234,8 @@ class SyncEnginePullTest {
             this.applier = new LocalApplier(root, store, blobs, PathResolvers.posix(), ROOT,
                     nodeId, deviceId, () -> T0);
             this.engine = new SyncEngine(reconciler, applier, new SyncPlanner());
+            this.cursoredEngine = new SyncEngine(reconciler, applier, new SyncPlanner(),
+                    store.cursors());
         }
 
         private void write(String path, String content) throws IOException {
@@ -209,8 +276,8 @@ class SyncEnginePullTest {
                 }
 
                 @Override
-                public List<ManifestEntry> manifest(SyncRootId rootId, VersionVector since) {
-                    return manifest;
+                public ManifestSnapshot manifest(SyncRootId rootId, long sinceSequence) {
+                    return new ManifestSnapshot(manifest, 0L);
                 }
 
                 @Override

@@ -6,7 +6,6 @@ import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
 import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.model.ManifestEntry;
-import github.gtouming.itemsync.domain.replication.VersionVector;
 import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.store.metadata.jdbc.JdbcMetadataStore;
 import github.gtouming.itemsync.sync.apply.LocalApplier;
@@ -84,9 +83,9 @@ class TlsRemotePeerTest {
 
         try (TlsTransportServer server = startServer(manifest);
              TlsRemotePeer peer = connect(server)) {
-            List<ManifestEntry> fetched = peer.manifest(ROOT, VersionVector.empty());
+            ManifestSnapshot fetched = peer.manifest(ROOT, 0L);
 
-            assertEquals(paths(manifest), paths(fetched));
+            assertEquals(paths(manifest), paths(fetched.entries()));
             try (InputStream in = peer.openBlob(hash)) {
                 assertArrayEquals(content, in.readAllBytes());
             }
@@ -109,7 +108,7 @@ class TlsRemotePeerTest {
 
     private TlsTransportServer startServer(List<ManifestEntry> manifest) throws IOException {
         RemoteSyncServer handler = new RemoteSyncServer(ROOT,
-                (rootId, since) -> manifest, BlobSources.of(a.blobs));
+                (rootId, since) -> new ManifestSnapshot(manifest, 0L), BlobSources.of(a.blobs));
         TlsTransportServer server = new TlsTransportServer(
                 serverIdentity, clientIdentity.fingerprint(), 0, handler);
         server.start();

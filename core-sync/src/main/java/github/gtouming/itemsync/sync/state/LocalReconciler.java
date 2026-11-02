@@ -14,6 +14,7 @@ import github.gtouming.itemsync.domain.replication.VersionVector;
 import github.gtouming.itemsync.store.blob.BlobStore;
 import github.gtouming.itemsync.store.metadata.MetadataStore;
 import github.gtouming.itemsync.sync.apply.PhysicalPathResolver;
+import github.gtouming.itemsync.sync.engine.transport.ManifestSnapshot;
 import github.gtouming.itemsync.sync.ignore.IgnoreFileLoader;
 import github.gtouming.itemsync.sync.ignore.IgnoreRules;
 import github.gtouming.itemsync.sync.scan.FileScanner;
@@ -109,7 +110,7 @@ public final class LocalReconciler {
             }
         }
 
-        return manifest();
+        return manifestSince(0).entries();
     }
 
     private void recordScannedFile(ScannedEntry entry, VersionVector vector) throws IOException {
@@ -137,28 +138,47 @@ public final class LocalReconciler {
         }
     }
 
-    private List<ManifestEntry> manifest() {
+    public ManifestSnapshot manifestSince(long sinceSequence) throws IOException {
+        long current = store.items().currentSequence(rootId);
+        long since = sinceSequence > current ? 0 : sinceSequence;
         List<ManifestEntry> entries = new ArrayList<>();
-        for (Item item : allItems()) {
-            if (item.deletedAt() != null) {
-                entries.add(new ManifestEntry(item.logicalPath(), item.kind(), null, 0,
-                        item.deletedAt(), item.vector(), true));
-                continue;
+        for (MetadataStore.ItemRepository.ChangedItem changed
+                : store.items().changedSince(rootId, since, current)) {
+            ManifestEntry entry = toEntry(changed.item());
+            if (entry != null) {
+                entries.add(entry);
             }
-            if (item.kind() == ItemKind.DIRECTORY) {
-                entries.add(new ManifestEntry(item.logicalPath(), ItemKind.DIRECTORY, null, 0,
-                        Instant.EPOCH, item.vector(), false));
-                continue;
+        }
+        return new ManifestSnapshot(Compat.copyList(entries), current);
+    }
+
+    public ManifestEntry toEntry(Item item) {
+        if (item.deletedAt() != null) {
+            return new ManifestEntry(item.logicalPath(), item.kind(), null, 0,
+                    item.deletedAt(), item.vector(), true);
+        }
+        if (item.kind() == ItemKind.DIRECTORY) {
+            return new ManifestEntry(item.logicalPath(), ItemKind.DIRECTORY, null, 0,
+                    Instant.EPOCH, item.vector(), false);
+        }
+        if (item.currentVersion() == null) {
+            return null;
+        }
+        FileVersion current = store.versions().find(item.currentVersion()).orElse(null);
+        if (current == null) {
+            return null;
+        }
+        return new ManifestEntry(item.logicalPath(), ItemKind.FILE, current.blobHash(),
+                current.size(), current.mtime(), item.vector(), false);
+    }
+
+    private List<ManifestEntry> toEntries(List<Item> items) {
+        List<ManifestEntry> entries = new ArrayList<>();
+        for (Item item : items) {
+            ManifestEntry entry = toEntry(item);
+            if (entry != null) {
+                entries.add(entry);
             }
-            if (item.currentVersion() == null) {
-                continue;
-            }
-            FileVersion current = store.versions().find(item.currentVersion()).orElse(null);
-            if (current == null) {
-                continue;
-            }
-            entries.add(new ManifestEntry(item.logicalPath(), ItemKind.FILE, current.blobHash(),
-                    current.size(), current.mtime(), item.vector(), false));
         }
         return Compat.copyList(entries);
     }
