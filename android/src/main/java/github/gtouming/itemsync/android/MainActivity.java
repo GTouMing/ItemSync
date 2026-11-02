@@ -15,31 +15,108 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import github.gtouming.itemsync.domain.security.LocalPassword;
+
 import java.util.List;
 
 public final class MainActivity extends Activity {
 
+    private AndroidSyncConfig config;
     private EditText rootField;
     private EditText groupField;
     private EditText peersField;
     private EditText portField;
     private EditText intervalField;
-    private EditText passwordField;
     private TextView fingerprintLabel;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        AndroidSyncConfig config = AndroidSyncConfig.of(this);
+        config = AndroidSyncConfig.of(this);
+        if (config.hasLocalPassword()) {
+            showUnlock();
+        } else {
+            showSetup();
+        }
+    }
 
-        ScrollView scroll = new ScrollView(this);
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        int padding = dp(20);
-        layout.setPadding(padding, padding, padding, padding);
-        scroll.addView(layout);
+    private void showSetup() {
+        LinearLayout layout = vertical();
+        layout.addView(hint("首次启动：设置本机密码。它只锁定界面与配置，后台同步不需要它；"
+                + "忘记只能清除应用数据。"));
+        EditText password = passwordField(layout, "本机密码");
+        EditText confirm = passwordField(layout, "确认密码");
+        TextView error = hint("");
+        layout.addView(error);
+        Button create = new Button(this);
+        create.setText("设置并继续");
+        create.setOnClickListener(view -> {
+            String first = password.getText().toString();
+            if (first.isEmpty()) {
+                error.setText("密码不能为空");
+                return;
+            }
+            if (!first.equals(confirm.getText().toString())) {
+                error.setText("两次输入不一致");
+                return;
+            }
+            create.setEnabled(false);
+            new Thread(() -> {
+                try {
+                    String hash = LocalPassword.hash(first.toCharArray());
+                    runOnUiThread(() -> {
+                        config.setLocalPasswordHash(hash);
+                        password.setText("");
+                        confirm.setText("");
+                        showConfig();
+                    });
+                } catch (RuntimeException e) {
+                    runOnUiThread(() -> {
+                        create.setEnabled(true);
+                        error.setText("设置失败: " + message(e));
+                    });
+                }
+            }).start();
+        });
+        layout.addView(create);
+        setContentView(scroll(layout));
+    }
 
-        layout.addView(hint("同步根默认为应用专属目录。密钥库口令使用 Android Keystore 加密保存。"));
+    private void showUnlock() {
+        LinearLayout layout = vertical();
+        layout.addView(hint("输入本机密码以查看同步配置。后台同步已在独立服务中运行。"));
+        EditText password = passwordField(layout, "本机密码");
+        TextView error = hint("");
+        layout.addView(error);
+        Button unlock = new Button(this);
+        unlock.setText("解锁");
+        unlock.setOnClickListener(view -> {
+            String value = password.getText().toString();
+            if (value.isEmpty()) {
+                error.setText("密码不能为空");
+                return;
+            }
+            unlock.setEnabled(false);
+            new Thread(() -> {
+                boolean ok = config.verifyLocalPassword(value.toCharArray());
+                runOnUiThread(() -> {
+                    unlock.setEnabled(true);
+                    if (ok) {
+                        password.setText("");
+                        showConfig();
+                    } else {
+                        error.setText("密码不正确");
+                    }
+                });
+            }).start();
+        });
+        layout.addView(unlock);
+        setContentView(scroll(layout));
+    }
+
+    private void showConfig() {
+        LinearLayout layout = vertical();
+        layout.addView(hint("同步根默认为应用专属目录。本机密码只锁界面；身份由 NUK 静默解锁。"));
         rootField = field(layout, "同步根", config.rootPath(), false);
         groupField = field(layout, "组 ID", config.groupId(), false);
         peersField = field(layout, "邻居（host:port:指纹，多个用逗号）",
@@ -47,9 +124,6 @@ public final class MainActivity extends Activity {
         portField = field(layout, "端口", String.valueOf(config.port()), true);
         intervalField = field(layout, "定时同步秒数（0 关闭）",
                 String.valueOf(config.intervalSeconds()), true);
-        passwordField = field(layout, "密钥库口令（留空保留现有）", "", true);
-        passwordField.setInputType(InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_VARIATION_PASSWORD);
 
         fingerprintLabel = hint(config.fingerprint().isEmpty()
                 ? "本机指纹: 启动服务后生成"
@@ -76,7 +150,12 @@ public final class MainActivity extends Activity {
         });
         layout.addView(stop);
 
-        setContentView(scroll);
+        Button lock = new Button(this);
+        lock.setText("锁定界面");
+        lock.setOnClickListener(view -> showUnlock());
+        layout.addView(lock);
+
+        setContentView(scroll(layout));
     }
 
     private void startSync() {
@@ -89,16 +168,14 @@ public final class MainActivity extends Activity {
             if (interval < 0) {
                 throw new IllegalArgumentException("定时秒数不能为负");
             }
-            AndroidSyncConfig.of(this).save(
+            config.save(
                     rootField.getText().toString(),
                     groupField.getText().toString(),
-                    passwordField.getText().toString(),
                     peersField.getText().toString(),
                     port,
                     interval);
-            AndroidSyncConfig saved = AndroidSyncConfig.of(this);
-            if (!saved.isConfigured()) {
-                Toast.makeText(this, "请填写密钥库口令", Toast.LENGTH_LONG).show();
+            if (config.identitySecret().length == 0) {
+                Toast.makeText(this, "无法初始化身份解锁密钥", Toast.LENGTH_LONG).show();
                 return;
             }
             if (Build.VERSION.SDK_INT >= 33
@@ -109,16 +186,38 @@ public final class MainActivity extends Activity {
             startForegroundService(new Intent(this, SyncForegroundService.class));
             Toast.makeText(this, "正在启动同步服务", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
-            String message = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage();
-            Toast.makeText(this, "启动失败: " + message, Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "启动失败: " + message(e), Toast.LENGTH_LONG).show();
         }
     }
 
-    private EditText field(LinearLayout layout, String label, String value, boolean numeric) {
-        TextView caption = new TextView(this);
-        caption.setText(label);
-        layout.addView(caption);
+    private LinearLayout vertical() {
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        int padding = dp(20);
+        layout.setPadding(padding, padding, padding, padding);
+        return layout;
+    }
 
+    private ScrollView scroll(LinearLayout layout) {
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(layout);
+        return scroll;
+    }
+
+    private EditText passwordField(LinearLayout layout, String label) {
+        layout.addView(hint(label));
+        EditText field = new EditText(this);
+        field.setSingleLine(true);
+        field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(10);
+        layout.addView(field, params);
+        return field;
+    }
+
+    private EditText field(LinearLayout layout, String label, String value, boolean numeric) {
+        layout.addView(hint(label));
         EditText field = new EditText(this);
         field.setText(value);
         field.setSingleLine(true);
@@ -141,6 +240,11 @@ public final class MainActivity extends Activity {
 
     private int dp(int value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
+    }
+
+    private static String message(Exception e) {
+        String message = e.getMessage();
+        return message == null || message.isEmpty() ? e.getClass().getSimpleName() : message;
     }
 
     private static String join(List<AndroidSyncConfig.Peer> peers) {

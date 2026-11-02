@@ -4,6 +4,8 @@ import android.content.Context;
 import android.content.SharedPreferences;
 
 import github.gtouming.itemsync.domain.identity.GroupId;
+import github.gtouming.itemsync.domain.security.LocalPassword;
+import github.gtouming.itemsync.domain.security.NodeUnlockKey;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -44,6 +46,26 @@ public final class AndroidSyncConfig {
 
     public static AndroidSyncConfig of(Context context) {
         return new AndroidSyncConfig(context);
+    }
+
+    public boolean hasLocalPassword() {
+        return !prefs.getString("local-password", "").isEmpty();
+    }
+
+    public void setLocalPasswordHash(String hash) {
+        prefs.edit().putString("local-password", hash).commit();
+    }
+
+    public boolean verifyLocalPassword(char[] password) {
+        String hash = prefs.getString("local-password", "");
+        if (hash.isEmpty() || password.length == 0) {
+            return false;
+        }
+        try {
+            return LocalPassword.verify(password, hash);
+        } catch (RuntimeException e) {
+            return false;
+        }
     }
 
     public String rootPath() {
@@ -105,39 +127,51 @@ public final class AndroidSyncConfig {
         return clients;
     }
 
-    public char[] password() {
-        String encrypted = prefs.getString("password", "");
+    /**
+     * NUK for the TLS identity. Legacy installs reuse the old encrypted identity
+     * password; fresh installs get a random 32-byte NUK. The GUI password is
+     * never used here.
+     */
+    public char[] identitySecret() {
+        String encrypted = prefs.getString("nuk", "");
         if (encrypted.isEmpty()) {
+            encrypted = prefs.getString("password", "");
+        }
+        if (!encrypted.isEmpty()) {
+            try {
+                return secrets.decrypt(encrypted).toCharArray();
+            } catch (Exception e) {
+                return new char[0];
+            }
+        }
+        if (new File(context.getFilesDir(), "identity.p12").isFile()) {
             return new char[0];
         }
+        NodeUnlockKey key = NodeUnlockKey.generate();
         try {
-            return secrets.decrypt(encrypted).toCharArray();
+            prefs.edit().putString("nuk", secrets.encrypt(key.base64())).apply();
         } catch (Exception e) {
             return new char[0];
         }
+        return key.keystorePassword();
     }
 
     public boolean isConfigured() {
-        return !groupId().trim().isEmpty()
-                && !rootPath().trim().isEmpty()
-                && password().length > 0;
+        if (prefs.getBoolean("configured", false)) {
+            return true;
+        }
+        return prefs.contains("group") && prefs.contains("root")
+                && (prefs.contains("nuk") || prefs.contains("password"));
     }
 
-    public void save(String root, String group, String password, String peers, int port,
-                     int intervalSeconds) {
+    public void save(String root, String group, String peers, int port, int intervalSeconds) {
         SharedPreferences.Editor editor = prefs.edit();
         editor.putString("root", root.trim());
         editor.putString("group", group.trim());
         editor.putString("peers", peers.trim());
         editor.putInt("port", port);
         editor.putInt("interval", intervalSeconds);
-        if (password != null && !password.isEmpty()) {
-            try {
-                editor.putString("password", secrets.encrypt(password));
-            } catch (Exception e) {
-                throw new IllegalStateException("无法加密口令", e);
-            }
-        }
+        editor.putBoolean("configured", true);
         editor.commit();
     }
 

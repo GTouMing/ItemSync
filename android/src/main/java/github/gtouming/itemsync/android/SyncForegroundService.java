@@ -83,7 +83,11 @@ public final class SyncForegroundService extends Service {
                 updateNotification("未配置，请在 ItemSync 中填写");
                 return;
             }
-            char[] password = config.password();
+            char[] password = config.identitySecret();
+            if (password.length == 0) {
+                updateNotification("无法解锁本机身份，请清除应用数据后重试");
+                return;
+            }
             TlsIdentity identity = ensureIdentity(password);
             config.saveFingerprint(identity.fingerprint());
 
