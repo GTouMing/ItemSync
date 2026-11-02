@@ -1,6 +1,9 @@
 ### Command Code ###
 .commandcode/taste/
 
+### DeepSeek Harness ###
+/.dsh-code-index/
+
 ### Gradle ###
 .gradle/
 build/
@@ -12,6 +15,7 @@ local.properties
 .idea/jarRepositories.xml
 .idea/compiler.xml
 .idea/libraries/
+.idea/claudeCodeTabState.xml
 *.iws
 *.iml
 *.ipr
