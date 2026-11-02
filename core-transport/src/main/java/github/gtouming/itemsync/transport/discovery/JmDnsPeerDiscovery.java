@@ -1,6 +1,7 @@
 package github.gtouming.itemsync.transport.discovery;
 
 import github.gtouming.itemsync.domain.identity.DeviceId;
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
 import javax.jmdns.JmDNS;
 import javax.jmdns.ServiceEvent;
@@ -113,6 +114,7 @@ public final class JmDnsPeerDiscovery implements PeerDiscovery {
         Map<String, String> properties = new LinkedHashMap<>();
         properties.put("nodeId", advertisement.nodeId().value());
         properties.put("deviceId", advertisement.deviceId().value());
+        properties.put("groupId", advertisement.groupId().value());
         properties.put("protocolVersion", Integer.toString(advertisement.protocolVersion()));
         properties.put("fingerprint", advertisement.fingerprint());
         return ServiceInfo.create(SERVICE_TYPE, advertisement.deviceId().value(),
@@ -122,9 +124,11 @@ public final class JmDnsPeerDiscovery implements PeerDiscovery {
     static DiscoveredPeer toPeer(ServiceInfo info) {
         String nodeId = info.getPropertyString("nodeId");
         String deviceId = info.getPropertyString("deviceId");
+        String groupId = info.getPropertyString("groupId");
         String protocolVersion = info.getPropertyString("protocolVersion");
         String fingerprint = info.getPropertyString("fingerprint");
-        if (nodeId == null || deviceId == null || protocolVersion == null || fingerprint == null) {
+        if (nodeId == null || deviceId == null || groupId == null
+                || protocolVersion == null || fingerprint == null) {
             return null;
         }
         try {
@@ -140,6 +144,7 @@ public final class JmDnsPeerDiscovery implements PeerDiscovery {
             return new DiscoveredPeer(
                     NodeId.of(nodeId),
                     DeviceId.of(deviceId),
+                    GroupId.parse(groupId),
                     Integer.parseInt(protocolVersion),
                     fingerprint,
                     addresses,

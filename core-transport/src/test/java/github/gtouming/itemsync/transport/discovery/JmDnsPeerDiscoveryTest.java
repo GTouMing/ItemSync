@@ -1,6 +1,7 @@
 package github.gtouming.itemsync.transport.discovery;
 
 import github.gtouming.itemsync.domain.identity.DeviceId;
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
 import github.gtouming.itemsync.transport.frame.FrameCodec;
 import javax.jmdns.ServiceInfo;
@@ -15,10 +16,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class JmDnsPeerDiscoveryTest {
 
+    private static final GroupId GROUP = GroupId.parse("group001");
+
     @Test
     void mapsAdvertisementToServiceInfoAndBack() {
         PeerAdvertisement advertisement = new PeerAdvertisement(
-                NodeId.of("node-a"), DeviceId.of("device-a"),
+                NodeId.of("node-a"), DeviceId.of("device-a"), GROUP,
                 FrameCodec.PROTOCOL_VERSION, "fingerprint", 47800);
 
         ServiceInfo info = JmDnsPeerDiscovery.serviceInfoFor(advertisement);
@@ -31,6 +34,7 @@ class JmDnsPeerDiscoveryTest {
         assertNotNull(peer);
         assertEquals(advertisement.nodeId(), peer.nodeId());
         assertEquals(advertisement.deviceId(), peer.deviceId());
+        assertEquals(GROUP, peer.groupId());
         assertEquals(advertisement.protocolVersion(), peer.protocolVersion());
         assertEquals(advertisement.fingerprint(), peer.fingerprint());
         assertEquals(advertisement.port(), peer.port());
@@ -48,7 +52,7 @@ class JmDnsPeerDiscoveryTest {
     @Test
     void rejectsInvalidProtocolVersion() {
         ServiceInfo info = ServiceInfo.create(JmDnsPeerDiscovery.SERVICE_TYPE, "device-a", 1234, 0, 0,
-                Map.of("nodeId", "node-a", "deviceId", "device-a",
+                Map.of("nodeId", "node-a", "deviceId", "device-a", "groupId", GROUP.value(),
                         "protocolVersion", "abc", "fingerprint", "fp"));
 
         assertNull(JmDnsPeerDiscovery.toPeer(info));
