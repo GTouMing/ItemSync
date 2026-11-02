@@ -1,6 +1,8 @@
 package github.gtouming.itemsync.desktop;
 
 import github.gtouming.itemsync.domain.model.FileVersion;
+import github.gtouming.itemsync.domain.security.NodeUnlockKey;
+import github.gtouming.itemsync.platform.desktop.DesktopSecurity;
 import github.gtouming.itemsync.platform.desktop.PathSupport;
 import github.gtouming.itemsync.platform.desktop.WindowsAutostart;
 import github.gtouming.itemsync.sync.state.ConflictResolver;
@@ -44,7 +46,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -53,6 +54,7 @@ import java.util.concurrent.TimeUnit;
 public final class DesktopApp extends Application {
 
     private DesktopConfig config;
+    private DesktopSecurity security;
     private DesktopService service;
     private ScheduledExecutorService statusScheduler;
     private ExecutorService worker;
@@ -80,18 +82,14 @@ public final class DesktopApp extends Application {
             Platform.exit();
             return;
         }
-        Path configFile = dataDir.resolve(DesktopConfig.FILE_NAME);
-        String password;
-        if (!Files.isRegularFile(configFile)) {
-            DesktopSetupDialog.Result setup = DesktopSetupDialog.show(dataDir);
-            if (setup == null) {
+        security = new DesktopSecurity(dataDir);
+        boolean configExists = Files.isRegularFile(dataDir.resolve(DesktopConfig.FILE_NAME));
+        if (!configExists) {
+            if (!security.hasLocalPassword() && !LocalPasswordDialog.setup(security)) {
                 Platform.exit();
                 return;
             }
-            password = setup.password();
-        } else {
-            password = password(dataDir);
-            if (password == null) {
+            if (!DesktopSetupDialog.show(dataDir)) {
                 Platform.exit();
                 return;
             }
@@ -103,18 +101,82 @@ public final class DesktopApp extends Application {
             Platform.exit();
             return;
         }
+        char[] secret;
         try {
-            service = DesktopService.open(config, password.toCharArray());
+            secret = identitySecret(dataDir);
+        } catch (Exception e) {
+            showError("解锁身份失败: " + e.getMessage());
+            Platform.exit();
+            return;
+        }
+        if (secret.length == 0) {
+            showError("无法解锁本机身份，请检查 NUK 或清除本机数据");
+            Platform.exit();
+            return;
+        }
+        try {
+            service = DesktopService.open(config, secret);
         } catch (Exception e) {
             showError("启动失败: " + e.getMessage());
             Platform.exit();
             return;
         }
+        startBackground();
+        buildUi(stage);
+        installTray(stage);
+        refreshAsync();
+        statusScheduler.scheduleWithFixedDelay(this::queryStatus, 2, 2, TimeUnit.SECONDS);
+        if (!configExists) {
+            stage.show();
+        }
+    }
 
-        worker = Executors.newSingleThreadExecutor(runnable -> daemon(runnable, "itemsync-desktop-worker"));
+    private void startBackground() {
+        worker = Executors.newSingleThreadExecutor(
+                runnable -> daemon(runnable, "itemsync-desktop-worker"));
         statusScheduler = Executors.newSingleThreadScheduledExecutor(
                 runnable -> daemon(runnable, "itemsync-desktop-status"));
+    }
 
+    private char[] identitySecret(Path dataDir) throws Exception {
+        char[] nuk = security.loadNuk();
+        if (nuk != null) {
+            return nuk;
+        }
+        if (Files.isRegularFile(dataDir.resolve("identity.p12"))) {
+            String legacy = migrationPassword();
+            if (legacy == null || legacy.isEmpty()) {
+                return new char[0];
+            }
+            security.saveNuk(legacy.toCharArray());
+            return legacy.toCharArray();
+        }
+        char[] generated = NodeUnlockKey.generate().keystorePassword();
+        security.saveNuk(generated);
+        return generated;
+    }
+
+    private String migrationPassword() {
+        String fromEnvironment = System.getenv("ITEMS_SYNC_PASSWORD");
+        if (fromEnvironment != null && !fromEnvironment.isEmpty()) {
+            return fromEnvironment;
+        }
+        Dialog<String> dialog = new Dialog<>();
+        dialog.setTitle("ItemSync");
+        dialog.setHeaderText("迁移：输入现有身份密钥口令");
+        PasswordField field = new PasswordField();
+        Label hint = new Label("只会要求这一次；之后由 Windows DPAPI 中的 NUK 静默解锁。");
+        hint.setWrapText(true);
+        VBox content = new VBox(10, field, hint);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+        ButtonType ok = new ButtonType("继续", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
+        dialog.setResultConverter(button -> button == ok ? field.getText() : null);
+        return dialog.showAndWait().orElse(null);
+    }
+
+    private void buildUi(Stage stage) {
         syncButton = new Button("立即同步");
         conflictsButton = new Button("处理冲突");
         historyButton = new Button("版本历史");
@@ -156,7 +218,6 @@ public final class DesktopApp extends Application {
                 stage.hide();
             }
         });
-        stage.show();
 
         syncButton.setOnAction(event -> syncAsync());
         conflictsButton.setOnAction(event -> showConflictsAsync());
@@ -167,10 +228,24 @@ public final class DesktopApp extends Application {
         exitButton.setOnAction(event -> exit(stage));
 
         configureAutostart(autostart);
-        installTray(stage);
+    }
 
+    private void openWindow(Stage stage) {
+        if (stage.isShowing()) {
+            stage.toFront();
+            stage.requestFocus();
+            return;
+        }
+        if (security.hasLocalPassword()) {
+            if (!LocalPasswordDialog.unlock(security)) {
+                return;
+            }
+        } else if (!LocalPasswordDialog.setup(security)) {
+            return;
+        }
+        stage.show();
+        stage.toFront();
         refreshAsync();
-        statusScheduler.scheduleWithFixedDelay(this::queryStatus, 2, 2, TimeUnit.SECONDS);
     }
 
     @Override
@@ -572,7 +647,7 @@ public final class DesktopApp extends Application {
                 }
             }
         });
-        trayIcon.addActionListener(event -> Platform.runLater(stage::show));
+        trayIcon.addActionListener(event -> Platform.runLater(() -> openWindow(stage)));
         try {
             SystemTray.getSystemTray().add(trayIcon);
         } catch (AWTException e) {
@@ -591,7 +666,7 @@ public final class DesktopApp extends Application {
         open.setFont(font);
         sync.setFont(font);
         exitItem.setFont(font);
-        open.addActionListener(action -> Platform.runLater(stage::show));
+        open.addActionListener(action -> Platform.runLater(() -> openWindow(stage)));
         sync.addActionListener(action -> Platform.runLater(this::syncAsync));
         exitItem.addActionListener(action -> Platform.runLater(() -> exit(stage)));
         popup.add(open);
@@ -671,38 +746,6 @@ public final class DesktopApp extends Application {
         if (menuOwner != null) {
             SwingUtilities.invokeLater(menuOwner::dispose);
         }
-    }
-
-    private String password(Path dataDir) {
-        String fromEnvironment = System.getenv("ITEMS_SYNC_PASSWORD");
-        if (fromEnvironment != null && !fromEnvironment.isEmpty()) {
-            return fromEnvironment;
-        }
-
-        boolean firstRun = !Files.isRegularFile(dataDir.resolve("identity.p12"));
-        Dialog<String> dialog = new Dialog<>();
-        dialog.setTitle("ItemSync");
-        dialog.setHeaderText(firstRun ? "设置本机密钥库口令（首次运行）" : "输入本机密钥库口令");
-
-        PasswordField field = new PasswordField();
-        Label hint = new Label(firstRun
-                ? "将创建本机身份证书与私钥，并用该口令加密保存在 identity.p12。\n"
-                + "密钥库口令不是账号密码，不会通过网络传输；请牢记，忘记后只能重新初始化并重新配对。"
-                : "用于解锁 identity.p12 中的本机证书与私钥。\n"
-                + "密钥库口令不是账号密码，不会通过网络传输。");
-        hint.setWrapText(true);
-        hint.setMaxWidth(380);
-        VBox content = new VBox(10, field, hint);
-        dialog.getDialogPane().setContent(content);
-        ButtonType ok = new ButtonType("确定", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
-        dialog.setResultConverter(button -> button == ok ? field.getText() : null);
-
-        Optional<String> result = dialog.showAndWait();
-        if (result.isEmpty() || result.get().isEmpty()) {
-            return null;
-        }
-        return result.get();
     }
 
     private void showInfo(String message) {
