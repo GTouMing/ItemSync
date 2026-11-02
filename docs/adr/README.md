@@ -13,6 +13,7 @@
 | [0028](0028-local-password-ui-lock-and-nuk.md) | 本机密码只锁 GUI，NUK 静默解锁节点身份                 | 已接受 |
 | [0029](0029-group-id-namespace.md)         | 组 ID 是命名空间，不是入组凭据                             | 已接受 |
 | [0030](0030-pairwise-trust-and-presence.md)| 成对信任开关、短码配对与组内在线可见                       | 已接受 |
+| [0031](0031-pairing-status-endpoint.md)   | 独立配对状态端点：只读远端信任查询                         | 已接受 |
 
 ## 技术选型与约束
 

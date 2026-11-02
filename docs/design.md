@@ -31,8 +31,8 @@
    同步组 = 同一组 ID 的隐式集合；实际同步由成对信任开关决定（ADR-0029/0030），无协调者
 ```
 
-- 发现：JmDNS 注册 `_itemsync._tcp.local`，TXT 带 `deviceId` / `protocolVersion` / `groupId` / `certificateFingerprint`。
-- 连接：同组设备先完成成对信任与 6 位短码确认，固定证书后进入 mTLS（ADR-0030）。
+- 发现：JmDNS 注册 `_itemsync._tcp.local`，TXT 带 `deviceId` / `protocolVersion` / `groupId` / `certificateFingerprint` / `pairingPort`。
+- 连接：同组设备先完成成对信任与 6 位短码确认，固定证书后进入 mTLS（ADR-0030）。未信任设备通过独立的配对端点查询远端信任状态；该端点只返回身份与布尔状态，不传文件数据（ADR-0031）。
 - 传播：变更方 `NOTIFY` → 接收方临时 `RECEIVE_ONLY` 拉取 → 立即反推（ADR-0021）。
 - 端口：固定监听 TCP `47800`（ADR-0011），mDNS TXT 同时发布端口号；被占用则启动失败并提示，不自动漂移。
 
