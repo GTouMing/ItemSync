@@ -8,6 +8,7 @@ import github.gtouming.itemsync.domain.identity.TriggerId;
 import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.Trigger;
 import github.gtouming.itemsync.domain.model.TriggerType;
+import github.gtouming.itemsync.platform.desktop.DesktopSecurity;
 import github.gtouming.itemsync.platform.desktop.NioDirectoryWatcher;
 import github.gtouming.itemsync.platform.desktop.PathSupport;
 import github.gtouming.itemsync.platform.desktop.ProcessWatcher;
@@ -87,13 +88,13 @@ public final class ItemSyncCli {
 
     private static void fingerprint(CliArguments arguments) throws IOException {
         Path data = dataDirectory(arguments);
-        TlsIdentity identity = TlsIdentity.load(identityFile(data), password(arguments));
+        TlsIdentity identity = TlsIdentity.load(identityFile(data), identityPassword(data, arguments));
         System.out.println(identity.fingerprint());
     }
 
     private static void serve(CliArguments arguments) throws Exception {
         Path data = dataDirectory(arguments);
-        TlsIdentity identity = TlsIdentity.load(identityFile(data), password(arguments));
+        TlsIdentity identity = TlsIdentity.load(identityFile(data), identityPassword(data, arguments));
         NodeId nodeId = NodeId.of(readText(data.resolve("node-id"), "node id"));
         DeviceId deviceId = DeviceId.of(readText(data.resolve("device-id"), "device id"));
         GroupId group = GroupId.parse(arguments.required("group"));
@@ -191,7 +192,7 @@ public final class ItemSyncCli {
 
     private static void sync(CliArguments arguments) throws Exception {
         Path data = dataDirectory(arguments);
-        TlsIdentity identity = TlsIdentity.load(identityFile(data), password(arguments));
+        TlsIdentity identity = TlsIdentity.load(identityFile(data), identityPassword(data, arguments));
         NodeId nodeId = NodeId.of(readText(data.resolve("node-id"), "node id"));
         DeviceId deviceId = DeviceId.of(readText(data.resolve("device-id"), "device id"));
         GroupId group = GroupId.parse(arguments.required("group"));
@@ -358,6 +359,12 @@ public final class ItemSyncCli {
             throw new IllegalStateException("identity not found, run init first: " + file);
         }
         return file;
+    }
+
+    private static char[] identityPassword(Path data, CliArguments arguments) throws IOException {
+        DesktopSecurity security = new DesktopSecurity(data);
+        char[] nuk = security.loadNuk();
+        return nuk != null ? nuk : password(arguments);
     }
 
     private static char[] password(CliArguments arguments) {
