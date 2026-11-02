@@ -58,6 +58,13 @@ public final class TrustStore {
         }
     }
 
+    public synchronized void clear() throws IOException {
+        if (!entries.isEmpty()) {
+            entries.clear();
+            save();
+        }
+    }
+
     private void save() throws IOException {
         Files.createDirectories(file.getParent());
         Path temp = Files.createTempFile(file.getParent(), ".trust-", ".tmp");

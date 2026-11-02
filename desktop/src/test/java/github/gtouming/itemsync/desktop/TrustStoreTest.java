@@ -48,4 +48,19 @@ class TrustStoreTest {
         assertFalse(new TrustStore(temp).isTrusted(GROUP, fingerprint));
         assertTrue(new TrustStore(temp).isTrusted(other, fingerprint));
     }
+
+    @Test
+    void clearRemovesEveryGroup() throws Exception {
+        TrustStore store = new TrustStore(temp);
+        String fingerprint = "a".repeat(64);
+        GroupId other = GroupId.parse("group002");
+        store.trust(GROUP, fingerprint);
+        store.trust(other, fingerprint);
+
+        store.clear();
+
+        assertFalse(store.isTrusted(GROUP, fingerprint));
+        assertFalse(store.isTrusted(other, fingerprint));
+        assertFalse(new TrustStore(temp).isTrusted(GROUP, fingerprint));
+    }
 }

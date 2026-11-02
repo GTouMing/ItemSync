@@ -790,7 +790,7 @@ public final class DesktopApp extends Application {
                     return;
                 }
                 DesktopConfig.changeGroup(config.dataDir(), group);
-                new TrustStore(config.dataDir()).retainOnly(group);
+                new TrustStore(config.dataDir()).clear();
             } catch (Exception e) {
                 error.setText("修改失败: " + e.getMessage());
                 event.consume();
