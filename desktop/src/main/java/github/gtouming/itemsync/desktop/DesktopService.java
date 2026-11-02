@@ -158,6 +158,7 @@ public final class DesktopService implements AutoCloseable {
 
     public List<PresenceTracker.Presence> onlinePeers() {
         List<PresenceTracker.Presence> peers = node.onlinePeers();
+        retainOnlinePeers(peers);
         for (PresenceTracker.Presence presence : peers) {
             if (isTrusted(presence.peer())) {
                 try {
@@ -191,16 +192,26 @@ public final class DesktopService implements AutoCloseable {
         connectedPeers.remove(peer.fingerprint().toLowerCase(Locale.ROOT));
     }
 
-    private void reconcileTrustedPeers() {
-        for (PresenceTracker.Presence presence : node.onlinePeers()) {
+    public void reconcileTrustedPeers() {
+        List<PresenceTracker.Presence> peers = node.onlinePeers();
+        retainOnlinePeers(peers);
+        for (PresenceTracker.Presence presence : peers) {
             if (isTrusted(presence.peer())) {
                 try {
                     connect(presence.peer());
                 } catch (IOException ignored) {
-                    // retry on the next sync or LAN dialog refresh
+                    // retry on the next background pass
                 }
             }
         }
+    }
+
+    private void retainOnlinePeers(List<PresenceTracker.Presence> peers) {
+        Set<String> online = new LinkedHashSet<>();
+        for (PresenceTracker.Presence presence : peers) {
+            online.add(presence.peer().fingerprint().toLowerCase(Locale.ROOT));
+        }
+        connectedPeers.retainAll(online);
     }
 
     private void connect(DiscoveredPeer peer) throws IOException {

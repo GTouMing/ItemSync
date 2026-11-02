@@ -129,8 +129,17 @@ public final class DesktopApp extends Application {
         installTray(stage);
         refreshAsync();
         statusScheduler.scheduleWithFixedDelay(this::queryStatus, 2, 2, TimeUnit.SECONDS);
+        statusScheduler.scheduleWithFixedDelay(this::reconcileTrustedPeers, 10, 10, TimeUnit.SECONDS);
         if (!configExists) {
             stage.show();
+        }
+    }
+
+    private void reconcileTrustedPeers() {
+        try {
+            service.reconcileTrustedPeers();
+        } catch (RuntimeException ignored) {
+            // retry on the next background pass
         }
     }
 
