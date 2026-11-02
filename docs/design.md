@@ -137,6 +137,12 @@ CREATE TABLE item         (id TEXT PRIMARY KEY, root_id TEXT NOT NULL, logical_p
                            UNIQUE (root_id, logical_path));
 CREATE TABLE item_vector  (root_id TEXT NOT NULL, logical_path TEXT NOT NULL, node_id TEXT NOT NULL,
                            counter INTEGER NOT NULL, PRIMARY KEY (root_id, logical_path, node_id));
+CREATE TABLE item_change  (seq INTEGER PRIMARY KEY AUTOINCREMENT, root_id TEXT NOT NULL,
+                           logical_path TEXT NOT NULL, UNIQUE (root_id, logical_path));
+CREATE TABLE sync_cursor  (root_id TEXT NOT NULL, node_id TEXT NOT NULL,
+                           pull_sequence INTEGER NOT NULL DEFAULT 0,
+                           push_sequence INTEGER NOT NULL DEFAULT 0,
+                           PRIMARY KEY (root_id, node_id));
 CREATE TABLE version      (id TEXT PRIMARY KEY, item_id TEXT NOT NULL, blob_hash TEXT NOT NULL,
                            size INTEGER NOT NULL, mtime INTEGER NOT NULL, source_node_id TEXT NOT NULL,
                            vector_json TEXT NOT NULL, run_id TEXT, created_at INTEGER NOT NULL);
@@ -178,14 +184,16 @@ CREATE TABLE resume       (blob_hash TEXT NOT NULL, peer_node_id TEXT NOT NULL, 
   └─ 轮到我执行：
        ① 进入 RECEIVE_ONLY(group)
        ② 扫描同步根（流式，5,000 项/批），应用 .isignore
-       ③ MANIFEST_REQUEST(since = 本地向量)
+       ③ MANIFEST_REQUEST(sinceSequence = 拉取游标)
        ④ 逐项判定：
             remote 严格更新  → 拉 Blob → 校验 SHA-256 → 原子 Apply → 本地 counter++
             两者 CONCURRENT  → 保留本地，写冲突副本，记 conflict 表
             本地严格更新    → 跳过（稍后反推）
        ⑤ 退出 RECEIVE_ONLY → 恢复 BIDIRECTIONAL
-       ⑥ 反推：本地向量领先于 source 的项，立即推给 source
+       ⑥ 反推：本地变更序号领先于推送游标的项，立即推给 source
 ```
+
+增量清单只返回 `item_change.seq > sinceSequence` 的项；客户端 apply 成功后才推进拉取游标。本地变更推送使用每个 peer 的推送游标，避免把“增量清单未返回的本地路径”误判为远端缺失。
 
 关键不变量：
 
@@ -250,9 +258,9 @@ ERROR            {code, message}
 // M0.5 计划：
 NOTIFY           {runId, groupId, logicalTime, vectorSnapshot, changedRootId}
 NOTIFY_ACK       {runId, accepted, queuePosition}
-MANIFEST_REQUEST {rootId, sinceVector, ignoreHash}
+MANIFEST_REQUEST {rootId, sinceSequence, sinceVector, ignoreHash}
 MANIFEST_PAGE    {entries[], nextCursor}
-MANIFEST_END     {totalEntries}
+MANIFEST_END     {totalEntries, sequence}
 ```
 
 ## 8. Sync Run 状态机
