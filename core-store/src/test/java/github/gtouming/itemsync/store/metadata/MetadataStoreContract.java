@@ -69,6 +69,16 @@ public abstract class MetadataStoreContract {
     }
 
     @Test
+    void advancesItemChangeSequenceAndReturnsOnlyChangedItems() {
+        conformance.advancesItemChangeSequenceAndReturnsOnlyChangedItems();
+    }
+
+    @Test
+    void storesAndUpdatesManifestCursors() {
+        conformance.storesAndUpdatesManifestCursors();
+    }
+
+    @Test
     void deletesItem() {
         conformance.deletesItem();
     }

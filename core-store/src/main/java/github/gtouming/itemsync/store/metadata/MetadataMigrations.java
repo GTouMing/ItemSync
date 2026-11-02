@@ -12,7 +12,8 @@ public final class MetadataMigrations {
 
     private static final List<Migration> MIGRATIONS = Compat.list(
             new Migration(1, "db/migrations/001_init.sql"),
-            new Migration(2, "db/migrations/002_conflict_remote_vector.sql"));
+            new Migration(2, "db/migrations/002_conflict_remote_vector.sql"),
+            new Migration(3, "db/migrations/003_manifest_changes.sql"));
 
     private MetadataMigrations() {
     }

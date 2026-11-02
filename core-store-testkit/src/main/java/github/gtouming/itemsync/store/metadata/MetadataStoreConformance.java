@@ -27,6 +27,7 @@ import github.gtouming.itemsync.domain.model.Trigger;
 import github.gtouming.itemsync.domain.model.TriggerType;
 import github.gtouming.itemsync.domain.platform.DevicePlatform;
 import github.gtouming.itemsync.domain.replication.VersionVector;
+import github.gtouming.itemsync.store.metadata.MetadataStore.ItemRepository;
 import github.gtouming.itemsync.store.metadata.MetadataStore.ItemRepository.ItemPage;
 
 import java.time.Instant;
@@ -167,6 +168,53 @@ public final class MetadataStoreConformance {
         ItemPage third = store.items().page(ROOT, second.nextCursor(), 2);
         assertEquals(List.of("f4"), paths(third));
         assertNull(third.nextCursor());
+    }
+
+    public void advancesItemChangeSequenceAndReturnsOnlyChangedItems() {
+        long before = store.items().currentSequence(ROOT);
+
+        store.items().upsert(item(ITEM, PATH, "ver-1", Map.of(NODE_A, 1L), null));
+
+        long first = store.items().currentSequence(ROOT);
+        assertTrue(first > before);
+        List<ItemRepository.ChangedItem> changed = store.items().changedSince(ROOT, before, first);
+        assertEquals(1, changed.size());
+        assertEquals(PATH, changed.get(0).item().logicalPath());
+        assertTrue(store.items().changedSince(ROOT, first, first).isEmpty());
+
+        LogicalPath next = LogicalPath.of("docs/b.txt");
+        store.items().upsert(item(ItemId.of("item-2"), next, "ver-2",
+                Map.of(NODE_A, 2L), null));
+
+        long second = store.items().currentSequence(ROOT);
+        assertTrue(second > first);
+        List<ItemRepository.ChangedItem> changedAgain = store.items().changedSince(ROOT, first, second);
+        assertEquals(1, changedAgain.size());
+        assertEquals(next, changedAgain.get(0).item().logicalPath());
+
+        store.items().upsert(item(ITEM, PATH, "ver-3", Map.of(NODE_A, 3L), null));
+        long third = store.items().currentSequence(ROOT);
+        assertTrue(third > second);
+        List<ItemRepository.ChangedItem> changedSamePath = store.items().changedSince(ROOT, second, third);
+        assertEquals(1, changedSamePath.size());
+        assertEquals(PATH, changedSamePath.get(0).item().logicalPath());
+    }
+
+    public void storesAndUpdatesManifestCursors() {
+        assertEquals(0L, store.cursors().pullSequence(ROOT, NODE_A));
+        assertEquals(0L, store.cursors().pushSequence(ROOT, NODE_A));
+
+        store.cursors().updatePull(ROOT, NODE_A, 7);
+        store.cursors().updatePush(ROOT, NODE_A, 3);
+
+        assertEquals(7L, store.cursors().pullSequence(ROOT, NODE_A));
+        assertEquals(3L, store.cursors().pushSequence(ROOT, NODE_A));
+
+        store.cursors().updatePull(ROOT, NODE_A, 9);
+        store.cursors().updatePush(ROOT, NODE_A, 5);
+
+        assertEquals(9L, store.cursors().pullSequence(ROOT, NODE_A));
+        assertEquals(5L, store.cursors().pushSequence(ROOT, NODE_A));
     }
 
     public void deletesItem() {

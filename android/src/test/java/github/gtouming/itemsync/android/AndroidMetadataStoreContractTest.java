@@ -79,6 +79,16 @@ public class AndroidMetadataStoreContractTest {
     }
 
     @Test
+    public void advancesItemChangeSequenceAndReturnsOnlyChangedItems() {
+        conformance.advancesItemChangeSequenceAndReturnsOnlyChangedItems();
+    }
+
+    @Test
+    public void storesAndUpdatesManifestCursors() {
+        conformance.storesAndUpdatesManifestCursors();
+    }
+
+    @Test
     public void deletesItem() {
         conformance.deletesItem();
     }

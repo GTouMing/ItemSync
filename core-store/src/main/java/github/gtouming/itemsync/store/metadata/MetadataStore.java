@@ -47,6 +47,8 @@ public interface MetadataStore extends AutoCloseable {
 
     SyncRunRepository runs();
 
+    CursorRepository cursors();
+
     @Override
     void close();
 
@@ -96,6 +98,9 @@ public interface MetadataStore extends AutoCloseable {
         record ItemPage(List<Item> items, String nextCursor) {
         }
 
+        record ChangedItem(Item item, long sequence) {
+        }
+
         void upsert(Item item);
 
         Optional<Item> find(SyncRootId rootId, LogicalPath path);
@@ -103,6 +108,10 @@ public interface MetadataStore extends AutoCloseable {
         Optional<Item> findById(ItemId id);
 
         ItemPage page(SyncRootId rootId, String cursor, int limit);
+
+        List<ChangedItem> changedSince(SyncRootId rootId, long sinceExclusive, long untilInclusive);
+
+        long currentSequence(SyncRootId rootId);
 
         void delete(ItemId id);
     }
@@ -164,5 +173,16 @@ public interface MetadataStore extends AutoCloseable {
         void update(SyncRun run);
 
         List<SyncRun> recent(SyncRootId rootId, int limit);
+    }
+
+    interface CursorRepository {
+
+        long pullSequence(SyncRootId rootId, NodeId peerNodeId);
+
+        void updatePull(SyncRootId rootId, NodeId peerNodeId, long sequence);
+
+        long pushSequence(SyncRootId rootId, NodeId peerNodeId);
+
+        void updatePush(SyncRootId rootId, NodeId peerNodeId, long sequence);
     }
 }
