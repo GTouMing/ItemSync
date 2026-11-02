@@ -3,6 +3,7 @@ package github.gtouming.itemsync.transport.net;
 import github.gtouming.itemsync.domain.compat.Compat;
 
 import github.gtouming.itemsync.transport.frame.Frame;
+import github.gtouming.itemsync.transport.tls.PinnedTrustManager;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import javax.net.ssl.SSLServerSocket;
@@ -36,10 +37,16 @@ public final class TlsTransportServer implements AutoCloseable {
 
     public TlsTransportServer(TlsIdentity identity, Set<String> expectedClientFingerprints,
                               int port, FrameHandler handler) throws IOException {
+        this(identity, new PinnedTrustManager(expectedClientFingerprints), port, handler);
+    }
+
+    public TlsTransportServer(TlsIdentity identity, PinnedTrustManager trustManager,
+                              int port, FrameHandler handler) throws IOException {
         Objects.requireNonNull(identity, "identity");
+        Objects.requireNonNull(trustManager, "trustManager");
         this.handler = Objects.requireNonNull(handler, "handler");
         SSLServerSocket socket = (SSLServerSocket) identity
-                .sslContext(expectedClientFingerprints)
+                .sslContext(trustManager)
                 .getServerSocketFactory()
                 .createServerSocket(port);
         socket.setNeedClientAuth(true);
@@ -59,6 +66,13 @@ public final class TlsTransportServer implements AutoCloseable {
         acceptThread = new Thread(this::acceptLoop, "itemsync-transport-accept");
         acceptThread.setDaemon(true);
         acceptThread.start();
+    }
+
+    public void closeConnections() {
+        for (FrameConnection connection : connections) {
+            connection.close();
+        }
+        connections.clear();
     }
 
     @Override

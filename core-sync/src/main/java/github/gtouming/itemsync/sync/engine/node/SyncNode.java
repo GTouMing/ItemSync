@@ -33,6 +33,7 @@ import github.gtouming.itemsync.transport.discovery.PeerAdvertisement;
 import github.gtouming.itemsync.transport.discovery.PresenceTracker;
 import github.gtouming.itemsync.transport.net.FrameConnection;
 import github.gtouming.itemsync.transport.net.TlsTransportServer;
+import github.gtouming.itemsync.transport.tls.PinnedTrustManager;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import java.io.IOException;
@@ -62,6 +63,7 @@ public final class SyncNode implements AutoCloseable {
     private final SyncEngine engine;
     private final RemoteSyncServer remoteSyncServer;
     private final TlsTransportServer server;
+    private final PinnedTrustManager trustManager;
     private final PresenceTracker presence;
     private final JmDnsPeerDiscovery discovery;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
@@ -114,7 +116,9 @@ public final class SyncNode implements AutoCloseable {
                 (requestedRoot, since) -> manifestCache,
                 BlobSources.of(blobs));
         this.reconcileAndCache();
-        this.server = new TlsTransportServer(identity, expectedClientFingerprints, port,
+        PinnedTrustManager trustManager = new PinnedTrustManager(expectedClientFingerprints);
+        this.trustManager = trustManager;
+        this.server = new TlsTransportServer(identity, trustManager, port,
                 this::onInboundFrame);
         this.server.start();
         this.transferTempDir = tempDir;
@@ -139,6 +143,23 @@ public final class SyncNode implements AutoCloseable {
 
     public List<PresenceTracker.Presence> onlinePeers() {
         return presence.online();
+    }
+
+    public void allowClient(String fingerprint) {
+        trustManager.allow(fingerprint);
+    }
+
+    public void revokeClient(String fingerprint) {
+        trustManager.revoke(fingerprint);
+        server.closeConnections();
+    }
+
+    public void removePeer(NodeId peerNodeId) {
+        PeerLink link = peers.remove(peerNodeId);
+        if (link != null) {
+            peersByFingerprint.remove(link.fingerprint(), link);
+            link.remote().close();
+        }
     }
 
     public int port() {

@@ -8,11 +8,11 @@ import java.security.cert.X509Certificate;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
-import java.util.stream.Collectors;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class PinnedTrustManager implements X509TrustManager {
 
-    private final Set<String> expectedFingerprints;
+    private final Set<String> expectedFingerprints = ConcurrentHashMap.newKeySet();
 
     public PinnedTrustManager(String expectedFingerprint) {
         this(Compat.set(expectedFingerprint));
@@ -23,15 +23,23 @@ public final class PinnedTrustManager implements X509TrustManager {
         if (expectedFingerprints.isEmpty()) {
             throw new IllegalArgumentException("expected fingerprints must not be empty");
         }
-        this.expectedFingerprints = expectedFingerprints.stream()
-                .map(fingerprint -> {
-                    Objects.requireNonNull(fingerprint, "fingerprint");
-                    if (fingerprint.trim().isEmpty()) {
-                        throw new IllegalArgumentException("expected fingerprint must not be blank");
-                    }
-                    return fingerprint.toLowerCase(Locale.ROOT);
-                })
-                .collect(Collectors.toSet());
+        for (String fingerprint : expectedFingerprints) {
+            allow(fingerprint);
+        }
+    }
+
+    public void allow(String fingerprint) {
+        Objects.requireNonNull(fingerprint, "fingerprint");
+        if (fingerprint.trim().isEmpty()) {
+            throw new IllegalArgumentException("expected fingerprint must not be blank");
+        }
+        expectedFingerprints.add(fingerprint.toLowerCase(Locale.ROOT));
+    }
+
+    public void revoke(String fingerprint) {
+        if (fingerprint != null) {
+            expectedFingerprints.remove(fingerprint.toLowerCase(Locale.ROOT));
+        }
     }
 
     @Override

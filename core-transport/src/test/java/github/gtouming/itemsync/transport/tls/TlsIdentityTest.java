@@ -69,6 +69,19 @@ class TlsIdentityTest {
     }
 
     @Test
+    void pinnedTrustManagerAllowsAndRevokesAtRuntime() throws Exception {
+        PinnedTrustManager trustManager = new PinnedTrustManager(alice.fingerprint());
+
+        trustManager.allow(bob.fingerprint());
+        trustManager.checkClientTrusted(new X509Certificate[] {bob.certificate()}, "RSA");
+
+        trustManager.revoke(bob.fingerprint());
+        assertThrows(CertificateException.class,
+                () -> trustManager.checkClientTrusted(
+                        new X509Certificate[] {bob.certificate()}, "RSA"));
+    }
+
+    @Test
     void pinnedTrustManagerRejectsEmptyChain() {
         PinnedTrustManager trustManager = new PinnedTrustManager(alice.fingerprint());
 
