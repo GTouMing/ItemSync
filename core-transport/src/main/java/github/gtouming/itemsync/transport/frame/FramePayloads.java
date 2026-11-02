@@ -189,6 +189,7 @@ public final class FramePayloads {
         JsonObject json = new JsonObject();
         json.addProperty("rootId", request.rootId().value());
         json.add("since", vectorToJson(request.since()));
+        json.addProperty("sinceSequence", request.sinceSequence());
         if (request.ignoreHash() != null) {
             json.addProperty("ignoreHash", request.ignoreHash());
         }
@@ -200,6 +201,7 @@ public final class FramePayloads {
         return new ManifestRequest(
                 SyncRootId.of(string(json, "rootId")),
                 vectorFromJson(object(json, "since")),
+                optionalNumber(json, "sinceSequence"),
                 optionalString(json, "ignoreHash"));
     }
 
@@ -232,11 +234,13 @@ public final class FramePayloads {
     public static byte[] encodeManifestEnd(ManifestEnd end) {
         JsonObject json = new JsonObject();
         json.addProperty("totalEntries", end.totalEntries());
+        json.addProperty("sequence", end.sequence());
         return toBytes(json);
     }
 
     public static ManifestEnd decodeManifestEnd(byte[] payload) {
-        return new ManifestEnd(integer(parseObject(payload), "totalEntries"));
+        JsonObject json = parseObject(payload);
+        return new ManifestEnd(integer(json, "totalEntries"), optionalNumber(json, "sequence"));
     }
 
     private static byte[] toBytes(JsonObject json) {
@@ -363,6 +367,14 @@ public final class FramePayloads {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("field is out of range: " + name + "=" + raw, e);
         }
+    }
+
+    private static long optionalNumber(JsonObject json, String name) {
+        JsonElement element = json.get(name);
+        if (element == null || element.isJsonNull()) {
+            return 0L;
+        }
+        return number(json, name);
     }
 
     private static int integer(JsonObject json, String name) {

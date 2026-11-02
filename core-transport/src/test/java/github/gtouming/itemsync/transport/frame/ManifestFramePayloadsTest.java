@@ -44,12 +44,24 @@ class ManifestFramePayloadsTest {
 
     @Test
     void roundTripsManifestRequest() {
-        ManifestRequest withHash = new ManifestRequest(ROOT, VersionVector.of(Map.of(NODE_A, 1L)), "ignore-hash");
+        ManifestRequest withHash = new ManifestRequest(ROOT, VersionVector.of(Map.of(NODE_A, 1L)),
+                17L, "ignore-hash");
         ManifestRequest withoutHash = new ManifestRequest(ROOT, VersionVector.empty(), null);
 
         assertEquals(withHash, FramePayloads.decodeManifestRequest(FramePayloads.encodeManifestRequest(withHash)));
         assertEquals(withoutHash,
                 FramePayloads.decodeManifestRequest(FramePayloads.encodeManifestRequest(withoutHash)));
+    }
+
+    @Test
+    void defaultsMissingManifestSequenceFieldsToZero() {
+        ManifestRequest request = FramePayloads.decodeManifestRequest(
+                "{\"rootId\":\"root-1\",\"since\":{}}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        ManifestEnd end = FramePayloads.decodeManifestEnd(
+                "{\"totalEntries\":3}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertEquals(0L, request.sinceSequence());
+        assertEquals(0L, end.sequence());
     }
 
     @Test
@@ -68,7 +80,7 @@ class ManifestFramePayloadsTest {
 
     @Test
     void roundTripsManifestEnd() {
-        ManifestEnd end = new ManifestEnd(42);
+        ManifestEnd end = new ManifestEnd(42, 19L);
 
         assertEquals(end, FramePayloads.decodeManifestEnd(FramePayloads.encodeManifestEnd(end)));
     }
