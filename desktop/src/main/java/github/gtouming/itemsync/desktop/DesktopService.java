@@ -22,6 +22,7 @@ import github.gtouming.itemsync.sync.state.VersionHistoryService;
 import github.gtouming.itemsync.sync.trigger.TriggerConfig;
 import github.gtouming.itemsync.sync.trigger.TriggerConfigCodec;
 import github.gtouming.itemsync.sync.trigger.TriggerEngine;
+import github.gtouming.itemsync.transport.discovery.PresenceTracker;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import java.io.IOException;
@@ -136,6 +137,10 @@ public final class DesktopService implements AutoCloseable {
 
     public List<SyncRunResult> syncNow() throws IOException {
         return node.syncNow();
+    }
+
+    public List<PresenceTracker.Presence> onlinePeers() {
+        return node.onlinePeers();
     }
 
     public List<ConflictResolver.ConflictView> openConflicts() {

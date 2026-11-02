@@ -7,6 +7,7 @@ import github.gtouming.itemsync.platform.desktop.PathSupport;
 import github.gtouming.itemsync.platform.desktop.WindowsAutostart;
 import github.gtouming.itemsync.sync.state.ConflictResolver;
 import github.gtouming.itemsync.sync.state.VersionHistoryService;
+import github.gtouming.itemsync.transport.discovery.PresenceTracker;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -44,6 +45,7 @@ import javax.swing.JPopupMenu;
 import javax.swing.JWindow;
 import javax.swing.SwingUtilities;
 import java.io.IOException;
+import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -186,6 +188,7 @@ public final class DesktopApp extends Application {
         syncButton = new Button("立即同步");
         conflictsButton = new Button("处理冲突");
         historyButton = new Button("版本历史");
+        Button lanButton = new Button("局域网设备");
         Button refreshButton = new Button("刷新");
         Button openDataButton = new Button("打开数据目录");
         Button hideButton = new Button("隐藏到托盘");
@@ -211,8 +214,8 @@ public final class DesktopApp extends Application {
         errorLabel.setStyle("-fx-text-fill: #b00020;");
         errorLabel.setWrapText(true);
 
-        HBox buttons = new HBox(8, syncButton, conflictsButton, historyButton, refreshButton,
-                openDataButton, hideButton, exitButton);
+        HBox buttons = new HBox(8, syncButton, conflictsButton, historyButton, lanButton,
+                refreshButton, openDataButton, hideButton, exitButton);
         VBox root = new VBox(16, grid, conflictLabel, errorLabel, buttons, autostart);
         root.setPadding(new Insets(20));
 
@@ -228,6 +231,7 @@ public final class DesktopApp extends Application {
         syncButton.setOnAction(event -> syncAsync());
         conflictsButton.setOnAction(event -> showConflictsAsync());
         historyButton.setOnAction(event -> showHistoryAsync());
+        lanButton.setOnAction(event -> showPeersAsync());
         refreshButton.setOnAction(event -> refreshAsync());
         openDataButton.setOnAction(event -> openData());
         hideButton.setOnAction(event -> stage.hide());
@@ -597,6 +601,62 @@ public final class DesktopApp extends Application {
                 + hash.substring(0, Math.min(8, hash.length())) + "  "
                 + version.sourceNodeId().value()
                 + "  创建于 " + version.createdAt();
+    }
+
+    private void showPeersAsync() {
+        worker.submit(() -> {
+            try {
+                List<PresenceTracker.Presence> peers = service.onlinePeers();
+                Platform.runLater(() -> showPeers(peers));
+            } catch (RuntimeException e) {
+                Platform.runLater(() -> showError("读取在线设备失败: " + e.getMessage()));
+            }
+        });
+    }
+
+    private void showPeers(List<PresenceTracker.Presence> peers) {
+        if (peers.isEmpty()) {
+            showInfo("同组内暂无在线设备");
+            return;
+        }
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("ItemSync");
+        dialog.setHeaderText("局域网设备（" + peers.size() + "）");
+        ListView<String> list = new ListView<>();
+        for (PresenceTracker.Presence presence : peers) {
+            StringBuilder addresses = new StringBuilder();
+            for (InetAddress address : presence.peer().addresses()) {
+                if (addresses.length() > 0) {
+                    addresses.append(", ");
+                }
+                addresses.append(address.getHostAddress());
+            }
+            list.getItems().add(presence.peer().deviceId().value()
+                    + "\n地址: " + (addresses.length() == 0 ? "未知" : addresses)
+                    + "  端口: " + presence.peer().port()
+                    + "\n指纹: " + presence.peer().fingerprint()
+                    + "\n最近在线: " + presence.lastSeen()
+                    + "\n状态: 未信任（信任与短码配对未接入）");
+        }
+        list.setPrefHeight(300);
+        list.setCellFactory(view -> new ListCell<>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty ? null : item);
+                setWrapText(true);
+            }
+        });
+        Label hint = new Label("只显示同一组 ID 的在线设备；暂不能同步，"
+                + "信任开关与 6 位短码配对将在下一段接入。");
+        hint.setWrapText(true);
+        VBox content = new VBox(10, list, hint);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+        dialog.getDialogPane().getButtonTypes().add(
+                new ButtonType("关闭", ButtonBar.ButtonData.CANCEL_CLOSE));
+        dialog.getDialogPane().setPrefWidth(760);
+        dialog.showAndWait();
     }
 
     private void configureAutostart(CheckBox checkBox) {
