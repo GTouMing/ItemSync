@@ -263,7 +263,14 @@ public final class DesktopApp extends Application {
             return;
         }
         if (security.hasLocalPassword()) {
-            if (!LocalPasswordDialog.unlock(security)) {
+            if (!LocalPasswordDialog.unlock(security, () -> {
+                closeResources();
+                try {
+                    DesktopReset.reset(config.dataDir(), config.root());
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
+            })) {
                 return;
             }
         } else if (!LocalPasswordDialog.setup(security)) {

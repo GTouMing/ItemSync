@@ -1,6 +1,7 @@
 package github.gtouming.itemsync.desktop;
 
 import github.gtouming.itemsync.platform.desktop.DesktopSecurity;
+import javafx.application.Platform;
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.scene.control.Button;
@@ -9,6 +10,7 @@ import javafx.scene.control.ButtonType;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.PasswordField;
+import javafx.scene.control.TextField;
 import javafx.scene.layout.VBox;
 
 final class LocalPasswordDialog {
@@ -58,7 +60,7 @@ final class LocalPasswordDialog {
         return dialog.showAndWait().orElse(false);
     }
 
-    static boolean unlock(DesktopSecurity security) {
+    static boolean unlock(DesktopSecurity security, Runnable resetAction) {
         Dialog<Boolean> dialog = new Dialog<>();
         dialog.setTitle("ItemSync");
         dialog.setHeaderText("输入本机密码");
@@ -73,7 +75,8 @@ final class LocalPasswordDialog {
         dialog.getDialogPane().setContent(content);
 
         ButtonType ok = new ButtonType("解锁", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
+        ButtonType forgot = new ButtonType("忘记密码？清除本机数据", ButtonBar.ButtonData.OTHER);
+        dialog.getDialogPane().getButtonTypes().addAll(ok, forgot, ButtonType.CANCEL);
         dialog.setResultConverter(button -> button == ok ? Boolean.TRUE : null);
         Button okButton = (Button) dialog.getDialogPane().lookupButton(ok);
         okButton.addEventFilter(ActionEvent.ACTION, event -> {
@@ -87,7 +90,74 @@ final class LocalPasswordDialog {
                 event.consume();
             }
         });
+
+        Button forgotButton = (Button) dialog.getDialogPane().lookupButton(forgot);
+        forgotButton.addEventFilter(ActionEvent.ACTION, event -> {
+            event.consume();
+            if (!confirmReset()) {
+                return;
+            }
+            try {
+                resetAction.run();
+            } catch (Exception e) {
+                showFailure("清除本机数据失败: " + message(e) + "\n请重新启动 ItemSync 后重试。");
+                Platform.exit();
+                System.exit(1);
+                return;
+            }
+            showInfo("本机数据已清除。请重新启动 ItemSync，重新设置本机密码、组 ID 并配对；同步根中的用户文件已保留。");
+            Platform.exit();
+            System.exit(0);
+        });
         return dialog.showAndWait().orElse(false);
+    }
+
+    private static boolean confirmReset() {
+        Dialog<Boolean> dialog = new Dialog<>();
+        dialog.setTitle("ItemSync");
+        dialog.setHeaderText("清除本机数据？");
+        Label warning = new Label("会删除本机身份、密码、配置、信任、元数据和版本缓存；\n"
+                + "同步根中的用户文件会保留。\n"
+                + "清除后需要重新设置本机密码、组 ID 并重新配对，无法撤销。");
+        warning.setWrapText(true);
+        TextField phrase = new TextField();
+        phrase.setPromptText("输入“清除”确认");
+        Label error = new Label();
+        error.setStyle("-fx-text-fill: #b00020;");
+        error.setWrapText(true);
+        VBox content = new VBox(10, warning, phrase, error);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+
+        ButtonType ok = new ButtonType("确认清除", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
+        dialog.setResultConverter(button -> button == ok ? Boolean.TRUE : null);
+        Button okButton = (Button) dialog.getDialogPane().lookupButton(ok);
+        okButton.addEventFilter(ActionEvent.ACTION, event -> {
+            if (!"清除".equals(phrase.getText().trim())) {
+                error.setText("请输入“清除”确认");
+                event.consume();
+            }
+        });
+        return dialog.showAndWait().orElse(false);
+    }
+
+    private static void showInfo(String message) {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("ItemSync");
+        dialog.setHeaderText("本机数据已清除");
+        dialog.setContentText(message);
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.OK);
+        dialog.showAndWait();
+    }
+
+    private static void showFailure(String message) {
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("ItemSync");
+        dialog.setHeaderText("清除失败");
+        dialog.setContentText(message);
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.OK);
+        dialog.showAndWait();
     }
 
     private static String message(Exception e) {
