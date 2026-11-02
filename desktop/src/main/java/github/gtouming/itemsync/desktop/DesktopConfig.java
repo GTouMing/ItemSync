@@ -77,6 +77,12 @@ public record DesktopConfig(Path dataDir, Path root, GroupId group, SyncRootId r
                 .collect(Collectors.toUnmodifiableSet());
     }
 
+    public static DesktopConfig changeGroup(Path dataDir, GroupId group) throws IOException {
+        DesktopConfig current = load(dataDir);
+        return create(dataDir, current.root, group, current.rootId, current.port,
+                "none", List.of(), current.launchCommand, current.debounce);
+    }
+
     public static DesktopConfig create(Path dataDir, Path root, GroupId group, SyncRootId rootId,
                                        int port, String expectedClientFingerprint,
                                        List<PeerTarget> peers, String launchCommand,

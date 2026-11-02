@@ -15,6 +15,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DesktopConfigTest {
 
@@ -87,6 +88,23 @@ class DesktopConfigTest {
         assertThrows(IllegalArgumentException.class, () -> DesktopConfig.create(temp, temp,
                 GroupId.random(), SyncRootId.of("root-1"), 47800, "none", List.of(), "",
                 Duration.ofSeconds(30)));
+    }
+
+    @Test
+    void changingGroupClearsLegacyPeers() throws Exception {
+        Path root = temp.resolve("root");
+        DesktopConfig created = DesktopConfig.create(temp, root, GroupId.parse("group001"),
+                SyncRootId.of("root-1"), 47900, "peer-fp",
+                List.of(DesktopConfig.PeerTarget.parse("127.0.0.1:47801:peer-fp")),
+                "", Duration.ofSeconds(10));
+
+        DesktopConfig changed = DesktopConfig.changeGroup(temp, GroupId.parse("group002"));
+
+        assertEquals("group002", changed.group().value());
+        assertEquals("none", changed.expectedClientFingerprint());
+        assertTrue(changed.peers().isEmpty());
+        assertEquals(created.root(), changed.root());
+        assertEquals(47900, changed.port());
     }
 
     @Test

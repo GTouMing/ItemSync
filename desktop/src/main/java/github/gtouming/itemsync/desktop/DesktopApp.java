@@ -1,6 +1,7 @@
 package github.gtouming.itemsync.desktop;
 
 import github.gtouming.itemsync.domain.model.FileVersion;
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.security.NodeUnlockKey;
 import github.gtouming.itemsync.platform.desktop.DesktopSecurity;
 import github.gtouming.itemsync.platform.desktop.PathSupport;
@@ -24,6 +25,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.PasswordField;
+import javafx.scene.control.TextField;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
@@ -66,6 +68,7 @@ public final class DesktopApp extends Application {
     private volatile boolean exiting;
 
     private final Label nodeLabel = new Label();
+    private final Label groupLabel = new Label();
     private final Label rootLabel = new Label();
     private final Label peersLabel = new Label();
     private final Label fingerprintLabel = new Label();
@@ -198,6 +201,7 @@ public final class DesktopApp extends Application {
         conflictsButton = new Button("处理冲突");
         historyButton = new Button("版本历史");
         Button lanButton = new Button("局域网设备");
+        Button groupButton = new Button("修改组 ID");
         Button refreshButton = new Button("刷新");
         Button openDataButton = new Button("打开数据目录");
         Button hideButton = new Button("隐藏到托盘");
@@ -209,26 +213,28 @@ public final class DesktopApp extends Application {
         grid.setVgap(8);
         grid.add(new Label("节点"), 0, 0);
         grid.add(nodeLabel, 1, 0);
-        grid.add(new Label("同步根"), 0, 1);
-        grid.add(rootLabel, 1, 1);
-        grid.add(new Label("邻居"), 0, 2);
-        grid.add(peersLabel, 1, 2);
-        grid.add(new Label("本机指纹"), 0, 3);
+        grid.add(new Label("组 ID"), 0, 1);
+        grid.add(groupLabel, 1, 1);
+        grid.add(new Label("同步根"), 0, 2);
+        grid.add(rootLabel, 1, 2);
+        grid.add(new Label("邻居"), 0, 3);
+        grid.add(peersLabel, 1, 3);
+        grid.add(new Label("本机指纹"), 0, 4);
         fingerprintLabel.setWrapText(true);
-        grid.add(fingerprintLabel, 1, 3);
-        grid.add(new Label("最近运行"), 0, 4);
-        grid.add(lastRunLabel, 1, 4);
+        grid.add(fingerprintLabel, 1, 4);
+        grid.add(new Label("最近运行"), 0, 5);
+        grid.add(lastRunLabel, 1, 5);
 
         conflictLabel.setStyle("-fx-text-fill: #9a6700;");
         errorLabel.setStyle("-fx-text-fill: #b00020;");
         errorLabel.setWrapText(true);
 
         HBox buttons = new HBox(8, syncButton, conflictsButton, historyButton, lanButton,
-                refreshButton, openDataButton, hideButton, exitButton);
+                groupButton, refreshButton, openDataButton, hideButton, exitButton);
         VBox root = new VBox(16, grid, conflictLabel, errorLabel, buttons, autostart);
         root.setPadding(new Insets(20));
 
-        stage.setScene(new Scene(root, 820, 460));
+        stage.setScene(new Scene(root, 900, 480));
         stage.setTitle("ItemSync");
         stage.setOnCloseRequest(event -> {
             if (!exiting) {
@@ -241,6 +247,7 @@ public final class DesktopApp extends Application {
         conflictsButton.setOnAction(event -> showConflictsAsync());
         historyButton.setOnAction(event -> showHistoryAsync());
         lanButton.setOnAction(event -> showPeersAsync());
+        groupButton.setOnAction(event -> changeGroup(stage));
         refreshButton.setOnAction(event -> refreshAsync());
         openDataButton.setOnAction(event -> openData());
         hideButton.setOnAction(event -> stage.hide());
@@ -307,6 +314,7 @@ public final class DesktopApp extends Application {
 
     private void render(DesktopService.Status status) {
         nodeLabel.setText(status.nodeId().value() + "  (port " + status.port() + ")");
+        groupLabel.setText(config.group().value());
         rootLabel.setText(status.root().toString());
         peersLabel.setText(Integer.toString(status.peers()));
         fingerprintLabel.setText(status.fingerprint());
@@ -708,6 +716,7 @@ public final class DesktopApp extends Application {
             try {
                 service.trustPeer(selected.peer());
                 refresh.run();
+                syncAsync();
             } catch (Exception e) {
                 showError("已记录本机信任，但连接失败；等待对方信任后重试: " + e.getMessage());
                 refresh.run();
@@ -751,6 +760,47 @@ public final class DesktopApp extends Application {
         dialog.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
         dialog.setResultConverter(button -> button == ok ? Boolean.TRUE : null);
         return dialog.showAndWait().orElse(false);
+    }
+
+    private void changeGroup(Stage stage) {
+        Dialog<Boolean> dialog = new Dialog<>();
+        dialog.setTitle("ItemSync");
+        dialog.setHeaderText("修改组 ID");
+        TextField field = new TextField(config.group().value());
+        Label warning = new Label("改 ID 会停止当前组同步，清除旧组信任并清空旧邻居配置；"
+                + "本机文件和版本保留。保存后应用会退出，请重新启动。");
+        warning.setWrapText(true);
+        Label error = new Label();
+        error.setStyle("-fx-text-fill: #b00020;");
+        error.setWrapText(true);
+        VBox content = new VBox(10, field, warning, error);
+        content.setPadding(new Insets(10));
+        dialog.getDialogPane().setContent(content);
+
+        ButtonType save = new ButtonType("保存并退出", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(save, ButtonType.CANCEL);
+        dialog.setResultConverter(button -> button == save ? Boolean.TRUE : null);
+        Button saveButton = (Button) dialog.getDialogPane().lookupButton(save);
+        saveButton.addEventFilter(ActionEvent.ACTION, event -> {
+            try {
+                GroupId group = GroupId.parse(field.getText().trim());
+                if (group.equals(config.group())) {
+                    error.setText("组 ID 未变化");
+                    event.consume();
+                    return;
+                }
+                DesktopConfig.changeGroup(config.dataDir(), group);
+                new TrustStore(config.dataDir()).retainOnly(group);
+            } catch (Exception e) {
+                error.setText("修改失败: " + e.getMessage());
+                event.consume();
+            }
+        });
+
+        if (dialog.showAndWait().orElse(false)) {
+            showInfo("组 ID 已修改，请重新启动 ItemSync。");
+            exit(stage);
+        }
     }
 
     private void configureAutostart(CheckBox checkBox) {
