@@ -1,5 +1,6 @@
 package github.gtouming.itemsync.transport.discovery;
 
+import github.gtouming.itemsync.domain.compat.Compat;
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
@@ -123,7 +124,7 @@ public final class JmDnsPeerDiscovery implements PeerDiscovery {
     }
 
     static int pairingPort(String raw) {
-        if (raw == null || raw.isBlank()) {
+        if (Compat.isBlank(raw)) {
             return 0;
         }
         try {
