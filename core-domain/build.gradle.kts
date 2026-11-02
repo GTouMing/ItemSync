@@ -14,6 +14,7 @@ tasks.withType<JavaCompile>().configureEach {
 }
 
 dependencies {
+    implementation(libs.bcprov)
     implementation(libs.gson)
 
     testImplementation(libs.junit.jupiter)
