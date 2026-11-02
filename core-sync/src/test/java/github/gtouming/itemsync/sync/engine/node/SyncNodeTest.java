@@ -21,6 +21,7 @@ import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
 class SyncNodeTest {
@@ -94,6 +95,25 @@ class SyncNodeTest {
         Files.writeString(rootB.resolve("from-b.txt"), "B", StandardCharsets.UTF_8);
         b.syncNow();
         await(() -> hasContent(rootA, "from-b.txt", "B"), "A receives from-b");
+    }
+
+    @Test
+    void secondSyncAdvancesThePullCursorByTheChangedItemsOnly() throws Exception {
+        Files.writeString(rootA.resolve("one.txt"), "1", StandardCharsets.UTF_8);
+        Files.writeString(rootA.resolve("two.txt"), "2", StandardCharsets.UTF_8);
+        a.syncNow();
+        await(() -> hasContent(rootB, "two.txt", "2"), "B receives initial files");
+        await(() -> storeB.cursors().pullSequence(ROOT, NODE_A) > 0,
+                "B initializes the pull cursor");
+
+        long before = storeB.cursors().pullSequence(ROOT, NODE_A);
+
+        Files.writeString(rootA.resolve("one.txt"), "1-updated", StandardCharsets.UTF_8);
+        a.syncNow();
+
+        await(() -> hasContent(rootB, "one.txt", "1-updated"), "B receives the update");
+        await(() -> storeB.cursors().pullSequence(ROOT, NODE_A) == before + 1,
+                "B advances the pull cursor by one");
     }
 
     @Test
