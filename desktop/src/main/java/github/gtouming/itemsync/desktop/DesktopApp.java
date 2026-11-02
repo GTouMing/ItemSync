@@ -7,6 +7,7 @@ import github.gtouming.itemsync.platform.desktop.PathSupport;
 import github.gtouming.itemsync.platform.desktop.WindowsAutostart;
 import github.gtouming.itemsync.sync.state.ConflictResolver;
 import github.gtouming.itemsync.sync.state.VersionHistoryService;
+import github.gtouming.itemsync.transport.tls.TlsIdentity;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
@@ -147,6 +148,11 @@ public final class DesktopApp extends Application {
             String legacy = migrationPassword();
             if (legacy == null || legacy.isEmpty()) {
                 return new char[0];
+            }
+            try {
+                TlsIdentity.load(dataDir.resolve("identity.p12"), legacy.toCharArray());
+            } catch (Exception e) {
+                throw new IOException("旧身份口令不正确", e);
             }
             security.saveNuk(legacy.toCharArray());
             return legacy.toCharArray();
