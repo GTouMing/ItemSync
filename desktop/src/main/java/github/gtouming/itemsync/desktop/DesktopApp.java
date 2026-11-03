@@ -763,12 +763,11 @@ public final class DesktopApp extends Application {
     }
 
     private static String trustState(PeerTrustCoordinator.PeerView view) {
-        String detail = trustDetail(view);
         if (!view.locallyTrusted()) {
             return switch (view.remoteTrust()) {
                 case TRUSTED -> "对方已信任你，等待本机确认";
                 case UNTRUSTED -> "未信任";
-                case UNKNOWN -> "未信任（无法确认对方状态" + detail + "）";
+                case UNKNOWN -> "未信任（无法确认对方状态）";
             };
         }
         if (view.remoteTrust() == RemoteTrust.TRUSTED && view.connected()) {
@@ -777,13 +776,8 @@ public final class DesktopApp extends Application {
         return switch (view.remoteTrust()) {
             case TRUSTED -> "已信任（双方）";
             case UNTRUSTED -> "已信任（等待对方确认）";
-            case UNKNOWN -> "已信任（无法确认对方状态" + detail + "）";
+            case UNKNOWN -> "已信任（无法确认对方状态）";
         };
-    }
-
-    private static String trustDetail(PeerTrustCoordinator.PeerView view) {
-        String error = view.remoteTrustError();
-        return error == null || error.trim().isEmpty() ? "" : "：" + error;
     }
 
     private void changeGroup(Stage stage) {

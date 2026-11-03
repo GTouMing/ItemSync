@@ -33,6 +33,8 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TlsRemotePeerTest {
 
@@ -68,6 +70,30 @@ class TlsRemotePeerTest {
     void tearDown() {
         a.close();
         b.close();
+    }
+
+    @Test
+    void reportsDisconnectedAfterTheServerClosesTheConnection() throws Exception {
+        try (TlsTransportServer server = new TlsTransportServer(
+                serverIdentity, clientIdentity.fingerprint(), 0, (connection, frame) -> {
+                })) {
+            server.start();
+            TlsRemotePeer peer = TlsRemotePeer.connect("127.0.0.1", server.port(),
+                    clientIdentity, serverIdentity.fingerprint(), NODE_A,
+                    temp.resolve("transfer"));
+            try {
+                assertTrue(peer.isConnected());
+                Thread.sleep(100);
+                server.closeConnections();
+                long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+                while (peer.isConnected() && System.nanoTime() < deadline) {
+                    Thread.sleep(10);
+                }
+                assertFalse(peer.isConnected());
+            } finally {
+                peer.close();
+            }
+        }
     }
 
     @Test

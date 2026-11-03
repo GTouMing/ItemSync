@@ -15,13 +15,11 @@ import java.net.InetAddress;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
@@ -32,13 +30,12 @@ public final class PeerTrustCoordinator implements AutoCloseable {
 
     private static final Duration REMOTE_TRUST_TTL = Duration.ofSeconds(30);
     private static final Duration REMOTE_TRUST_FAILURE_TTL = Duration.ofSeconds(5);
-    private static final Duration PAIRING_QUERY_TIMEOUT = Duration.ofSeconds(5);
+    private static final Duration PAIRING_QUERY_TIMEOUT = Duration.ofSeconds(2);
 
     private final GroupId group;
     private final TlsIdentity identity;
     private final SyncNode node;
     private final PeerTrustStore trustStore;
-    private final Set<String> connectedPeers = ConcurrentHashMap.newKeySet();
     private final Map<String, String> remoteTrustErrors = new ConcurrentHashMap<>();
     private final RemoteTrustCache remoteTrustCache = new RemoteTrustCache(Instant::now);
     private final ExecutorService statusExecutor = Executors.newFixedThreadPool(4, runnable -> {
@@ -58,7 +55,6 @@ public final class PeerTrustCoordinator implements AutoCloseable {
 
     public List<PresenceTracker.Presence> onlinePeers() {
         List<PresenceTracker.Presence> peers = node.onlinePeers();
-        retainOnlinePeers(peers);
         for (PresenceTracker.Presence presence : peers) {
             if (isTrusted(presence.peer())) {
                 try {
@@ -96,7 +92,7 @@ public final class PeerTrustCoordinator implements AutoCloseable {
     }
 
     public boolean isConnected(DiscoveredPeer peer) {
-        return connectedPeers.contains(normalized(peer.fingerprint()));
+        return node.isConnected(peer.nodeId());
     }
 
     public String lastWarning() {
@@ -125,13 +121,11 @@ public final class PeerTrustCoordinator implements AutoCloseable {
         remoteTrustCache.invalidate(peer.fingerprint());
         node.revokeClient(peer.fingerprint());
         node.removePeer(peer.nodeId());
-        connectedPeers.remove(normalized(peer.fingerprint()));
         lastWarning = null;
     }
 
     public void reconcileTrustedPeers() {
         List<PresenceTracker.Presence> peers = node.onlinePeers();
-        retainOnlinePeers(peers);
         for (PresenceTracker.Presence presence : peers) {
             if (isTrusted(presence.peer())) {
                 try {
@@ -147,7 +141,6 @@ public final class PeerTrustCoordinator implements AutoCloseable {
 
     public void refreshRemoteTrust() {
         List<PresenceTracker.Presence> peers = node.onlinePeers();
-        retainOnlinePeers(peers);
         for (PresenceTracker.Presence presence : peers) {
             if (presence.peer().pairingPort() <= 0) {
                 continue;
@@ -214,26 +207,16 @@ public final class PeerTrustCoordinator implements AutoCloseable {
                 : failure.getClass().getSimpleName() + ": " + message;
     }
 
-    private void retainOnlinePeers(List<PresenceTracker.Presence> peers) {
-        Set<String> online = new LinkedHashSet<>();
-        for (PresenceTracker.Presence presence : peers) {
-            online.add(normalized(presence.peer().fingerprint()));
-        }
-        connectedPeers.retainAll(online);
-    }
-
     private void connect(DiscoveredPeer peer) throws IOException {
         if (!isTrusted(peer)) {
             return;
         }
-        String fingerprint = normalized(peer.fingerprint());
-        if (connectedPeers.contains(fingerprint)) {
+        if (node.isConnected(peer.nodeId())) {
             return;
         }
         InetAddress address = addressOf(peer);
         node.allowClient(peer.fingerprint());
         node.addPeer(peer.nodeId(), address.getHostAddress(), peer.port(), peer.fingerprint());
-        connectedPeers.add(fingerprint);
     }
 
     private void handleCertificateMismatch(DiscoveredPeer peer) {
@@ -245,7 +228,6 @@ public final class PeerTrustCoordinator implements AutoCloseable {
         remoteTrustCache.invalidate(peer.fingerprint());
         node.revokeClient(peer.fingerprint());
         node.removePeer(peer.nodeId());
-        connectedPeers.remove(normalized(peer.fingerprint()));
         lastWarning = "对端证书与缓存的指纹不匹配，已关闭对 " + peer.deviceId().value() + " 的信任";
     }
 

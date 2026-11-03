@@ -50,6 +50,7 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
     private volatile BlobCollector activeDownload;
     private volatile TlsTransportClient client;
     private volatile FrameConnection connection;
+    private volatile boolean closed;
 
     private TlsRemotePeer(NodeId remoteNodeId, Path tempDir, Duration timeout) throws IOException {
         this.remoteNodeId = Objects.requireNonNull(remoteNodeId, "remoteNodeId");
@@ -164,21 +165,28 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
 
     @Override
     public void onClosed(FrameConnection connection) {
+        closed = true;
         failAll(new IOException("connection closed"));
     }
 
     @Override
     public void onError(FrameConnection connection, IOException error) {
+        closed = true;
         failAll(error);
     }
 
     @Override
     public void close() {
+        closed = true;
         failAll(new IOException("remote peer closed"));
         TlsTransportClient current = client;
         if (current != null) {
             current.close();
         }
+    }
+
+    public boolean isConnected() {
+        return !closed && connection != null;
     }
 
     private void bind(TlsTransportClient client) {

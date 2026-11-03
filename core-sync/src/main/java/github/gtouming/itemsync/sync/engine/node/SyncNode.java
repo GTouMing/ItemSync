@@ -238,6 +238,11 @@ public final class SyncNode implements AutoCloseable {
         return pairingPort;
     }
 
+    public boolean isConnected(NodeId peerNodeId) {
+        PeerLink link = peers.get(peerNodeId);
+        return link != null && link.remote.isConnected();
+    }
+
     public NodeId nodeId() {
         return nodeId;
     }
