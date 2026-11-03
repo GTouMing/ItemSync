@@ -42,6 +42,7 @@ import github.gtouming.itemsync.transport.tls.PinnedTrustManager;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
@@ -75,6 +76,8 @@ public final class SyncNode implements AutoCloseable {
     private final PinnedTrustManager trustManager;
     private final PresenceTracker presence;
     private final JmDnsPeerDiscovery discovery;
+    private final boolean discoveryAvailable;
+    private final Exception discoveryError;
     private final ExecutorService worker = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "itemsync-sync-worker");
         thread.setDaemon(true);
@@ -110,6 +113,16 @@ public final class SyncNode implements AutoCloseable {
                     MetadataStore store, BlobStore blobs, PhysicalPathResolver paths,
                     TlsIdentity identity, DeviceId deviceId, Set<String> expectedClientFingerprints,
                     int port, Path transferTempDir, PairingTrustProvider pairingTrust)
+            throws IOException {
+        this(nodeId, groupId, rootId, syncRoot, store, blobs, paths, identity, deviceId,
+                expectedClientFingerprints, port, transferTempDir, pairingTrust, null);
+    }
+
+    public SyncNode(NodeId nodeId, GroupId groupId, SyncRootId rootId, Path syncRoot,
+                    MetadataStore store, BlobStore blobs, PhysicalPathResolver paths,
+                    TlsIdentity identity, DeviceId deviceId, Set<String> expectedClientFingerprints,
+                    int port, Path transferTempDir, PairingTrustProvider pairingTrust,
+                    InetAddress discoveryAddress)
             throws IOException {
         this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
         this.groupId = Objects.requireNonNull(groupId, "groupId");
@@ -165,14 +178,18 @@ public final class SyncNode implements AutoCloseable {
 
         PresenceTracker presenceTracker = new PresenceTracker(groupId, nodeId, Instant::now);
         JmDnsPeerDiscovery peerDiscovery = null;
+        boolean discoveryReady = false;
+        Exception discoveryFailure = null;
         try {
-            peerDiscovery = new JmDnsPeerDiscovery();
+            peerDiscovery = new JmDnsPeerDiscovery(discoveryAddress);
             peerDiscovery.addListener(presenceTracker);
             peerDiscovery.start();
             peerDiscovery.advertise(new PeerAdvertisement(nodeId, deviceId, groupId,
                     FrameCodec.PROTOCOL_VERSION, identity.fingerprint(), server.port(),
                     pairingPort));
+            discoveryReady = true;
         } catch (IOException | RuntimeException e) {
+            discoveryFailure = e;
             if (peerDiscovery != null) {
                 peerDiscovery.close();
                 peerDiscovery = null;
@@ -180,10 +197,20 @@ public final class SyncNode implements AutoCloseable {
         }
         this.presence = presenceTracker;
         this.discovery = peerDiscovery;
+        this.discoveryAvailable = discoveryReady;
+        this.discoveryError = discoveryFailure;
     }
 
     public List<PresenceTracker.Presence> onlinePeers() {
         return presence.online();
+    }
+
+    public boolean discoveryAvailable() {
+        return discoveryAvailable;
+    }
+
+    public Exception discoveryError() {
+        return discoveryError;
     }
 
     public void allowClient(String fingerprint) {

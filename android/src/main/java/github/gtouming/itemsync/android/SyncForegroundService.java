@@ -28,9 +28,15 @@ import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.Enumeration;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -153,11 +159,12 @@ public final class SyncForegroundService extends Service {
             trustStore.retainOnly(group);
 
             store = new AndroidSqliteMetadataStore(this, "itemsync.sqlite");
+            InetAddress discoveryAddress = preferredDiscoveryAddress();
             node = new SyncNode(nodeId, group, SyncRootId.of(config.rootId()), root, store,
                     new FileSystemBlobStore(new File(getFilesDir(), "data").toPath()),
                     PathResolvers.posix(), identity, deviceId, Compat.set("none"),
                     config.port(), new File(getCacheDir(), "transfer").toPath(),
-                    trustStore::isTrusted);
+                    trustStore::isTrusted, discoveryAddress);
             peerTrust = new PeerTrustCoordinator(group, identity, node, trustStore);
             peerTrust.reconcileTrustedPeers();
 
@@ -168,7 +175,13 @@ public final class SyncForegroundService extends Service {
             if (interval > 0) {
                 scheduler.scheduleWithFixedDelay(this::sync, interval, interval, TimeUnit.SECONDS);
             }
-            updateNotification("已启动");
+            if (node.discoveryAvailable()) {
+                Log.i(TAG, "mDNS discovery started");
+                updateNotification("已启动");
+            } else {
+                Log.e(TAG, "mDNS discovery unavailable", node.discoveryError());
+                updateNotification("已启动（局域网发现不可用，请查看日志）");
+            }
             sync();
         } catch (Exception e) {
             Log.e(TAG, "start failed", e);
@@ -199,6 +212,40 @@ public final class SyncForegroundService extends Service {
         multicastLock = wifi.createMulticastLock("itemsync-mdns");
         multicastLock.setReferenceCounted(false);
         multicastLock.acquire();
+    }
+
+    private InetAddress preferredDiscoveryAddress() {
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            if (interfaces == null) {
+                return null;
+            }
+            InetAddress fallback = null;
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface network = interfaces.nextElement();
+                if (!network.isUp() || network.isLoopback() || network.isVirtual()) {
+                    continue;
+                }
+                for (InetAddress address : Collections.list(network.getInetAddresses())) {
+                    if (!(address instanceof Inet4Address)
+                            || address.isLoopbackAddress()
+                            || address.isLinkLocalAddress()) {
+                        continue;
+                    }
+                    String name = network.getName().toLowerCase(Locale.ROOT);
+                    if (name.startsWith("wlan") || name.startsWith("wifi")) {
+                        return address;
+                    }
+                    if (fallback == null) {
+                        fallback = address;
+                    }
+                }
+            }
+            return fallback;
+        } catch (Exception e) {
+            Log.w(TAG, "cannot select discovery address", e);
+            return null;
+        }
     }
 
     private void releaseMulticastLock() {

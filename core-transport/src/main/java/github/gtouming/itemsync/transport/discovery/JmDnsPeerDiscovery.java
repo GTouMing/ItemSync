@@ -62,7 +62,11 @@ public final class JmDnsPeerDiscovery implements PeerDiscovery {
     private boolean started;
 
     public JmDnsPeerDiscovery() throws IOException {
-        this.jmDns = JmDNS.create();
+        this(null);
+    }
+
+    public JmDnsPeerDiscovery(InetAddress address) throws IOException {
+        this.jmDns = address == null ? JmDNS.create() : JmDNS.create(address);
     }
 
     @Override
