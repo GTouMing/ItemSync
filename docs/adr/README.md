@@ -15,6 +15,7 @@
 | [0030](0030-pairwise-trust-and-presence.md)| 成对信任开关、短码配对与组内在线可见                       | 已接受 |
 | [0031](0031-pairing-status-endpoint.md)   | 独立配对状态端点：只读远端信任查询                         | 已接受 |
 | [0032](0032-incremental-manifest-change-log.md) | 增量 manifest：变更序号与拉取/推送游标              | 已接受 |
+| [0033](0033-trust-without-short-code.md)   | 信任开关使用证书固定，不使用短码配对                       | 已接受 |
 
 ## 技术选型与约束
 

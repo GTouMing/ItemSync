@@ -63,6 +63,7 @@ public final class SyncForegroundService extends Service {
     private ScheduledFuture<?> debounce;
     private volatile boolean started;
     private volatile int lastOnlineCount = -1;
+    private volatile String lastTrustWarning;
 
     public static boolean isRunning() {
         return running;
@@ -125,14 +126,6 @@ public final class SyncForegroundService extends Service {
             throw new IllegalStateException("同步服务尚未启动");
         }
         current.untrustPeer(peer);
-    }
-
-    public String pairingCode(DiscoveredPeer peer) {
-        PeerTrustCoordinator current = peerTrust;
-        if (current == null) {
-            throw new IllegalStateException("同步服务尚未启动");
-        }
-        return current.pairingCode(peer);
     }
 
     public void requestSync() {
@@ -210,6 +203,12 @@ public final class SyncForegroundService extends Service {
             if (online != lastOnlineCount) {
                 lastOnlineCount = online;
                 Log.i(TAG, "online peers: " + online);
+            }
+            String warning = current.lastWarning();
+            if (warning != null && !warning.equals(lastTrustWarning)) {
+                lastTrustWarning = warning;
+                Log.w(TAG, warning);
+                updateNotification(warning);
             }
         } catch (RuntimeException e) {
             Log.w(TAG, "peer reconcile failed", e);

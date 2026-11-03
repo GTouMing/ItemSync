@@ -17,11 +17,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 public final class TlsTransportServer implements AutoCloseable {
 
     private final SSLServerSocket serverSocket;
     private final FrameHandler handler;
+    private final Consumer<IOException> handshakeFailure;
     private final Set<FrameConnection> connections = ConcurrentHashMap.newKeySet();
     private final ExecutorService workers = Executors.newCachedThreadPool(runnable -> {
         Thread thread = new Thread(runnable, "itemsync-transport-server");
@@ -48,9 +50,16 @@ public final class TlsTransportServer implements AutoCloseable {
 
     public TlsTransportServer(TlsIdentity identity, X509TrustManager trustManager,
                               int port, FrameHandler handler) throws IOException {
+        this(identity, trustManager, port, handler, null);
+    }
+
+    public TlsTransportServer(TlsIdentity identity, X509TrustManager trustManager,
+                              int port, FrameHandler handler,
+                              Consumer<IOException> handshakeFailure) throws IOException {
         Objects.requireNonNull(identity, "identity");
         Objects.requireNonNull(trustManager, "trustManager");
         this.handler = Objects.requireNonNull(handler, "handler");
+        this.handshakeFailure = handshakeFailure;
         SSLServerSocket socket = (SSLServerSocket) identity
                 .sslContext(trustManager)
                 .getServerSocketFactory()
@@ -124,6 +133,11 @@ public final class TlsTransportServer implements AutoCloseable {
                 socket.close();
             } catch (IOException ignored) {
                 // closing is best effort
+            }
+            if (handshakeFailure != null
+                    && PinnedTrustManager.findFingerprintMismatch(e) != null) {
+                handshakeFailure.accept(new IOException(
+                        "inbound peer certificate does not match the pinned fingerprint", e));
             }
         }
     }

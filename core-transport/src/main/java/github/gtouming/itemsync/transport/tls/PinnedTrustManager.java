@@ -65,9 +65,34 @@ public final class PinnedTrustManager implements X509TrustManager {
         leaf.checkValidity();
         String actual = TlsIdentity.fingerprint(leaf);
         if (!expectedFingerprints.contains(actual)) {
-            throw new CertificateException(
+            throw new FingerprintMismatchException(actual,
                     "certificate fingerprint mismatch: expected one of "
                             + expectedFingerprints + ", got " + actual);
+        }
+    }
+
+    public static FingerprintMismatchException findFingerprintMismatch(Throwable failure) {
+        Throwable current = failure;
+        while (current != null) {
+            if (current instanceof FingerprintMismatchException mismatch) {
+                return mismatch;
+            }
+            current = current.getCause();
+        }
+        return null;
+    }
+
+    public static final class FingerprintMismatchException extends CertificateException {
+
+        private final String actualFingerprint;
+
+        private FingerprintMismatchException(String actualFingerprint, String message) {
+            super(message);
+            this.actualFingerprint = actualFingerprint;
+        }
+
+        public String actualFingerprint() {
+            return actualFingerprint;
         }
     }
 }

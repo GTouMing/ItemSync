@@ -1,6 +1,7 @@
 package github.gtouming.itemsync.transport.net;
 
 import github.gtouming.itemsync.transport.frame.Frame;
+import github.gtouming.itemsync.transport.tls.PinnedTrustManager;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import javax.net.ssl.SSLSocket;
@@ -33,6 +34,11 @@ public final class TlsTransportClient implements AutoCloseable {
                 socket.close();
             } catch (IOException ignored) {
                 // closing is best effort
+            }
+            PinnedTrustManager.FingerprintMismatchException mismatch =
+                    PinnedTrustManager.findFingerprintMismatch(e);
+            if (mismatch != null) {
+                throw new PeerCertificateMismatchException(mismatch.actualFingerprint(), e);
             }
             throw e;
         }

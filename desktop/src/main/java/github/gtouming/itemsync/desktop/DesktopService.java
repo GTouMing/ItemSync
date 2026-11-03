@@ -163,10 +163,6 @@ public final class DesktopService implements AutoCloseable {
         return peerTrust.isConnected(peer);
     }
 
-    public String pairingCode(DiscoveredPeer peer) {
-        return peerTrust.pairingCode(peer);
-    }
-
     public void trustPeer(DiscoveredPeer peer) throws IOException {
         peerTrust.trustPeer(peer);
     }
@@ -236,7 +232,7 @@ public final class DesktopService implements AutoCloseable {
             int conflicts = store.conflicts().findOpen(1000).size();
             IOException error = node.lastError() != null ? node.lastError() : triggerEngine.lastError();
             return new Status(node.nodeId(), identity.fingerprint(), node.port(), config.root(),
-                    lastRun, conflicts, error);
+                    lastRun, conflicts, error, peerTrust.lastWarning());
         });
     }
 
@@ -250,7 +246,8 @@ public final class DesktopService implements AutoCloseable {
     }
 
     public record Status(NodeId nodeId, String fingerprint, int port, Path root,
-                         SyncRun lastRun, int openConflicts, IOException lastError) {
+                         SyncRun lastRun, int openConflicts, IOException lastError,
+                         String trustWarning) {
     }
 
     private static TlsIdentity ensureIdentity(Path dataDir, char[] password) throws IOException {

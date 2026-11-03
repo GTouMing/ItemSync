@@ -152,7 +152,7 @@ public final class SyncNode implements AutoCloseable {
         PinnedTrustManager trustManager = new PinnedTrustManager(expectedClientFingerprints);
         this.trustManager = trustManager;
         this.server = new TlsTransportServer(identity, trustManager, port,
-                this::onInboundFrame);
+                this::onInboundFrame, this::onInboundHandshakeFailure);
         this.server.start();
         this.transferTempDir = tempDir;
 
@@ -337,6 +337,10 @@ public final class SyncNode implements AutoCloseable {
         } else {
             remoteSyncServer.onFrame(connection, frame);
         }
+    }
+
+    private void onInboundHandshakeFailure(IOException failure) {
+        lastError = failure;
     }
 
     private void handleNotify(FrameConnection connection, Frame frame) {

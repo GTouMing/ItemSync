@@ -12,7 +12,6 @@ import github.gtouming.itemsync.transport.tls.TlsIdentity;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import javax.net.ssl.SSLException;
 import java.io.IOException;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -130,8 +129,11 @@ class TlsTransportTest {
                 serverIdentity, clientIdentity.fingerprint(), 0, noop)) {
             server.start();
 
-            assertThrows(SSLException.class, () -> TlsTransportClient.connect(
-                    "127.0.0.1", server.port(), clientIdentity, "0".repeat(64), noop));
+            PeerCertificateMismatchException failure = assertThrows(
+                    PeerCertificateMismatchException.class, () -> TlsTransportClient.connect(
+                            "127.0.0.1", server.port(), clientIdentity,
+                            "0".repeat(64), noop));
+            assertEquals(serverIdentity.fingerprint(), failure.actualFingerprint());
         }
     }
 }

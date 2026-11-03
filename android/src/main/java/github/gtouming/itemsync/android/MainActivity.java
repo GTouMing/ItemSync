@@ -2,7 +2,6 @@ package github.gtouming.itemsync.android;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.ComponentName;
 import android.content.Intent;
@@ -169,7 +168,7 @@ public final class MainActivity extends Activity {
     private void showConfig() {
         LinearLayout layout = vertical();
         layout.addView(hint("同步根默认为应用专属目录。本机密码只锁界面；身份由 NUK 静默解锁。\n"
-                + "同组设备会在“局域网设备”中显示，核对 6 位短码后建立信任。"));
+                + "同组设备会在“局域网设备”中显示，开启信任后建立连接。"));
         rootField = field(layout, "同步根", config.rootPath(), false);
         groupField = field(layout, "组 ID", config.groupId(), false);
         portField = field(layout, "端口", String.valueOf(config.port()), true);
@@ -302,29 +301,6 @@ public final class MainActivity extends Activity {
         }).start();
     }
 
-    private boolean confirmPairing(PeerTrustCoordinator.PeerView view, Runnable onConfirm) {
-        SyncForegroundService service = boundService;
-        if (service == null) {
-            return false;
-        }
-        String code;
-        try {
-            code = service.pairingCode(view.presence().peer());
-        } catch (RuntimeException e) {
-            Toast.makeText(this, "无法生成配对短码: " + message(e), Toast.LENGTH_LONG).show();
-            return false;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle("核对配对短码")
-                .setMessage(code + "\n\n在另一台设备上对 "
-                        + view.presence().peer().deviceId().value()
-                        + " 执行信任，并确认两边显示相同的短码。")
-                .setPositiveButton("已核对，信任", (dialog, which) -> onConfirm.run())
-                .setNegativeButton("取消", null)
-                .show();
-        return true;
-    }
-
     private static String trustState(PeerTrustCoordinator.PeerView view) {
         if (!view.locallyTrusted()) {
             return switch (view.remoteTrust()) {
@@ -400,7 +376,7 @@ public final class MainActivity extends Activity {
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(300)));
 
             pairButton = new Button(MainActivity.this);
-            pairButton.setText("信任 / 配对");
+            pairButton.setText("开启信任");
             pairButton.setOnClickListener(view -> pairSelected());
             content.addView(pairButton);
 
@@ -484,13 +460,13 @@ public final class MainActivity extends Activity {
             if (view == null || !view.identityVerified()) {
                 return;
             }
-            confirmPairing(view, () -> callService("信任失败", () -> {
+            callService("信任失败", () -> {
                 SyncForegroundService service = boundService;
                 if (service == null) {
                     throw new IllegalStateException("同步服务已断开");
                 }
                 service.trustPeer(view.presence().peer());
-            }));
+            });
         }
 
         private void revokeSelected() {

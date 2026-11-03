@@ -2,10 +2,10 @@ package github.gtouming.itemsync.sync.trust;
 
 import github.gtouming.itemsync.domain.compat.Compat;
 import github.gtouming.itemsync.domain.identity.GroupId;
-import github.gtouming.itemsync.domain.security.PairingCode;
 import github.gtouming.itemsync.sync.engine.node.SyncNode;
 import github.gtouming.itemsync.transport.discovery.DiscoveredPeer;
 import github.gtouming.itemsync.transport.discovery.PresenceTracker;
+import github.gtouming.itemsync.transport.net.PeerCertificateMismatchException;
 import github.gtouming.itemsync.transport.pairing.PairingStatusClient;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
@@ -34,7 +34,6 @@ public final class PeerTrustCoordinator implements AutoCloseable {
     private static final Duration PAIRING_QUERY_TIMEOUT = Duration.ofSeconds(2);
 
     private final GroupId group;
-    private final String localFingerprint;
     private final TlsIdentity identity;
     private final SyncNode node;
     private final PeerTrustStore trustStore;
@@ -45,12 +44,12 @@ public final class PeerTrustCoordinator implements AutoCloseable {
         thread.setDaemon(true);
         return thread;
     });
+    private volatile String lastWarning;
 
     public PeerTrustCoordinator(GroupId group, TlsIdentity identity, SyncNode node,
                                 PeerTrustStore trustStore) {
         this.group = Objects.requireNonNull(group, "group");
         this.identity = Objects.requireNonNull(identity, "identity");
-        this.localFingerprint = identity.fingerprint();
         this.node = Objects.requireNonNull(node, "node");
         this.trustStore = Objects.requireNonNull(trustStore, "trustStore");
     }
@@ -62,6 +61,8 @@ public final class PeerTrustCoordinator implements AutoCloseable {
             if (isTrusted(presence.peer())) {
                 try {
                     connect(presence.peer());
+                } catch (PeerCertificateMismatchException e) {
+                    handleCertificateMismatch(presence.peer());
                 } catch (IOException ignored) {
                     // the peer has not trusted us yet, or is temporarily unreachable
                 }
@@ -96,15 +97,25 @@ public final class PeerTrustCoordinator implements AutoCloseable {
         return connectedPeers.contains(normalized(peer.fingerprint()));
     }
 
-    public String pairingCode(DiscoveredPeer peer) {
-        return PairingCode.between(group, localFingerprint, peer.fingerprint());
+    public String lastWarning() {
+        return lastWarning;
+    }
+
+    public void clearWarning() {
+        lastWarning = null;
     }
 
     public void trustPeer(DiscoveredPeer peer) throws IOException {
         trustStore.trust(group, peer.fingerprint());
         remoteTrustCache.invalidate(peer.fingerprint());
         node.allowClient(peer.fingerprint());
-        connect(peer);
+        try {
+            connect(peer);
+            lastWarning = null;
+        } catch (PeerCertificateMismatchException e) {
+            handleCertificateMismatch(peer);
+            throw e;
+        }
     }
 
     public void untrustPeer(DiscoveredPeer peer) throws IOException {
@@ -113,6 +124,7 @@ public final class PeerTrustCoordinator implements AutoCloseable {
         node.revokeClient(peer.fingerprint());
         node.removePeer(peer.nodeId());
         connectedPeers.remove(normalized(peer.fingerprint()));
+        lastWarning = null;
     }
 
     public void reconcileTrustedPeers() {
@@ -122,6 +134,8 @@ public final class PeerTrustCoordinator implements AutoCloseable {
             if (isTrusted(presence.peer())) {
                 try {
                     connect(presence.peer());
+                } catch (PeerCertificateMismatchException e) {
+                    handleCertificateMismatch(presence.peer());
                 } catch (IOException ignored) {
                     // retry on the next background pass
                 }
@@ -202,6 +216,19 @@ public final class PeerTrustCoordinator implements AutoCloseable {
         node.allowClient(peer.fingerprint());
         node.addPeer(peer.nodeId(), address.getHostAddress(), peer.port(), peer.fingerprint());
         connectedPeers.add(fingerprint);
+    }
+
+    private void handleCertificateMismatch(DiscoveredPeer peer) {
+        try {
+            trustStore.untrust(group, peer.fingerprint());
+        } catch (IOException ignored) {
+            // the warning below is still useful
+        }
+        remoteTrustCache.invalidate(peer.fingerprint());
+        node.revokeClient(peer.fingerprint());
+        node.removePeer(peer.nodeId());
+        connectedPeers.remove(normalized(peer.fingerprint()));
+        lastWarning = "对端证书与缓存的指纹不匹配，已关闭对 " + peer.deviceId().value() + " 的信任";
     }
 
     private static InetAddress addressOf(DiscoveredPeer peer) throws IOException {

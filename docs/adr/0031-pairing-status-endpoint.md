@@ -2,6 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-11-02
+- 修订：[ADR-0033](0033-trust-without-short-code.md) 替代短码配对部分。
 - 补充：[ADR-0030](0030-pairwise-trust-and-presence.md) 的配对流程与在线状态
 
 ## 背景

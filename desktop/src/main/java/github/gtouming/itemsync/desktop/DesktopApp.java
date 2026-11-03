@@ -336,7 +336,9 @@ public final class DesktopApp extends Application {
                     ? "处理冲突"
                     : "处理冲突 (" + status.openConflicts() + ")");
         }
-        errorLabel.setText(status.lastError() == null
+        errorLabel.setText(status.trustWarning() != null
+                ? "信任警告: " + status.trustWarning()
+                : status.lastError() == null
                 ? ""
                 : "最近错误: " + status.lastError().getMessage());
     }
@@ -676,11 +678,11 @@ public final class DesktopApp extends Application {
         });
         list.getSelectionModel().selectFirst();
 
-        Label hint = new Label("信任需要双方操作：两台设备都确认同一个 6 位短码并点信任后才会同步。"
-                + "组 ID 只决定能发现哪些设备。");
+        Label hint = new Label("信任需要双方操作：两台设备都开启信任后才会同步；"
+                + "首次开启会固定当前发现的证书指纹。组 ID 只决定能发现哪些设备。");
         hint.setWrapText(true);
 
-        ButtonType pair = new ButtonType("信任 / 配对", ButtonBar.ButtonData.OTHER);
+        ButtonType pair = new ButtonType("开启信任", ButtonBar.ButtonData.OTHER);
         ButtonType revoke = new ButtonType("撤销信任", ButtonBar.ButtonData.OTHER);
         ButtonType refreshButtonType = new ButtonType("刷新", ButtonBar.ButtonData.OTHER);
         ButtonType close = new ButtonType("关闭", ButtonBar.ButtonData.CANCEL_CLOSE);
@@ -728,7 +730,7 @@ public final class DesktopApp extends Application {
         pairButton.addEventFilter(ActionEvent.ACTION, event -> {
             event.consume();
             PeerTrustCoordinator.PeerView selected = list.getSelectionModel().getSelectedItem();
-            if (selected == null || !selected.identityVerified() || !confirmPairing(selected)) {
+            if (selected == null || !selected.identityVerified()) {
                 return;
             }
             try {
@@ -777,25 +779,6 @@ public final class DesktopApp extends Application {
             case UNTRUSTED -> "已信任（等待对方确认）";
             case UNKNOWN -> "已信任（无法确认对方状态）";
         };
-    }
-
-    private boolean confirmPairing(PeerTrustCoordinator.PeerView view) {
-        String code = service.pairingCode(view.presence().peer());
-        Dialog<Boolean> dialog = new Dialog<>();
-        dialog.setTitle("ItemSync");
-        dialog.setHeaderText("核对配对短码");
-        Label codeLabel = new Label(code);
-        codeLabel.setStyle("-fx-font-size: 32px; -fx-font-family: monospace;");
-        Label hint = new Label("在另一台设备上对 " + view.presence().peer().deviceId().value()
-                + " 执行信任，并确认两边显示相同的短码。\n确认后本机才开始信任该设备。");
-        hint.setWrapText(true);
-        VBox content = new VBox(12, codeLabel, hint);
-        content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
-        ButtonType ok = new ButtonType("已核对，信任", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
-        dialog.setResultConverter(button -> button == ok ? Boolean.TRUE : null);
-        return dialog.showAndWait().orElse(false);
     }
 
     private void changeGroup(Stage stage) {
