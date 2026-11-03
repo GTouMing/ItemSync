@@ -450,14 +450,13 @@ public final class MainActivity extends Activity {
 
         private void updateButtons() {
             PeerTrustCoordinator.PeerView view = selected();
-            pairButton.setEnabled(view != null && !view.locallyTrusted()
-                    && view.identityVerified());
+            pairButton.setEnabled(view != null && !view.locallyTrusted());
             revokeButton.setEnabled(view != null && view.locallyTrusted());
         }
 
         private void pairSelected() {
             PeerTrustCoordinator.PeerView view = selected();
-            if (view == null || !view.identityVerified()) {
+            if (view == null) {
                 return;
             }
             callService("信任失败", () -> {

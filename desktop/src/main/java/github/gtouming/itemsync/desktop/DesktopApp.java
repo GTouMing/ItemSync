@@ -697,8 +697,7 @@ public final class DesktopApp extends Application {
         Button refreshButton = (Button) dialog.getDialogPane().lookupButton(refreshButtonType);
         Runnable updateButtons = () -> {
             PeerTrustCoordinator.PeerView selected = list.getSelectionModel().getSelectedItem();
-            pairButton.setDisable(selected == null || selected.locallyTrusted()
-                    || !selected.identityVerified());
+            pairButton.setDisable(selected == null || selected.locallyTrusted());
             revokeButton.setDisable(selected == null || !selected.locallyTrusted());
         };
         list.getSelectionModel().selectedItemProperty().addListener(
@@ -730,7 +729,7 @@ public final class DesktopApp extends Application {
         pairButton.addEventFilter(ActionEvent.ACTION, event -> {
             event.consume();
             PeerTrustCoordinator.PeerView selected = list.getSelectionModel().getSelectedItem();
-            if (selected == null || !selected.identityVerified()) {
+            if (selected == null) {
                 return;
             }
             try {
