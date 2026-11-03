@@ -62,6 +62,7 @@ public final class SyncForegroundService extends Service {
     private WifiManager.MulticastLock multicastLock;
     private ScheduledFuture<?> debounce;
     private volatile boolean started;
+    private volatile int lastOnlineCount = -1;
 
     public final class LocalBinder extends Binder {
         public SyncForegroundService service() {
@@ -198,6 +199,11 @@ public final class SyncForegroundService extends Service {
         try {
             current.reconcileTrustedPeers();
             current.refreshRemoteTrust();
+            int online = current.onlinePeers().size();
+            if (online != lastOnlineCount) {
+                lastOnlineCount = online;
+                Log.i(TAG, "online peers: " + online);
+            }
         } catch (RuntimeException e) {
             Log.w(TAG, "peer reconcile failed", e);
         }
