@@ -47,6 +47,7 @@
 | [0008](0008-windows-only-process-watch.md)  | 第三方应用启停监听仅 Windows 提供 | 已接受 |
 | [0011](0011-mdns-tls-chunked-transfer.md)   | mDNS 发现 + TLS 1.3 + 分块续传    | 已接受 |
 | [0014](0014-whole-file-transfer-first.md)   | 第一期整文件传输，不做块级差分    | 已接受 |
+| [0034](0034-connection-liveness-heartbeat.md) | 同步连接使用 PING/PONG 空闲检测 | 已接受 |
 
 ## 平台与交付
 

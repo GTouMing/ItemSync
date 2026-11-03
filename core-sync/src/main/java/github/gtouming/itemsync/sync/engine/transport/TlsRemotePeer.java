@@ -18,6 +18,7 @@ import github.gtouming.itemsync.transport.frame.ManifestPage;
 import github.gtouming.itemsync.transport.frame.ManifestRequest;
 import github.gtouming.itemsync.transport.net.FrameConnection;
 import github.gtouming.itemsync.transport.net.FrameHandler;
+import github.gtouming.itemsync.transport.net.HeartbeatHandler;
 import github.gtouming.itemsync.transport.net.TlsTransportClient;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 import github.gtouming.itemsync.transport.transfer.BlobDownload;
@@ -38,7 +39,9 @@ import java.util.concurrent.TimeoutException;
 
 public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoCloseable {
 
-    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
+    private static final Duration DEFAULT_PROGRESS_TIMEOUT = Duration.ofMinutes(2);
+    private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
+    private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(10);
 
     private final NodeId remoteNodeId;
     private final Path tempDir;
@@ -63,15 +66,24 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
                                         String expectedServerFingerprint, NodeId remoteNodeId,
                                         Path tempDir) throws IOException {
         return connect(host, port, identity, expectedServerFingerprint, remoteNodeId,
-                tempDir, DEFAULT_TIMEOUT);
+                tempDir, DEFAULT_PROGRESS_TIMEOUT, HEARTBEAT_INTERVAL);
     }
 
     public static TlsRemotePeer connect(String host, int port, TlsIdentity identity,
                                         String expectedServerFingerprint, NodeId remoteNodeId,
                                         Path tempDir, Duration timeout) throws IOException {
+        return connect(host, port, identity, expectedServerFingerprint, remoteNodeId,
+                tempDir, timeout, HEARTBEAT_INTERVAL);
+    }
+
+    public static TlsRemotePeer connect(String host, int port, TlsIdentity identity,
+                                        String expectedServerFingerprint, NodeId remoteNodeId,
+                                        Path tempDir, Duration timeout, Duration heartbeat)
+            throws IOException {
         TlsRemotePeer peer = new TlsRemotePeer(remoteNodeId, tempDir, timeout);
         TlsTransportClient client = TlsTransportClient.connect(
-                host, port, identity, expectedServerFingerprint, peer);
+                host, port, identity, expectedServerFingerprint,
+                new HeartbeatHandler(peer), CONNECT_TIMEOUT, heartbeat);
         peer.bind(client);
         return peer;
     }
@@ -192,6 +204,7 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
     private void bind(TlsTransportClient client) {
         this.client = client;
         this.connection = client.connection();
+        this.closed = false;
     }
 
     private FrameConnection connection() throws IOException {
@@ -215,15 +228,19 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
 
     private static final class ManifestCollector {
 
+        private static final long POLL_MILLIS = 200;
+
         private final List<ManifestEntry> entries = new ArrayList<>();
         private final CompletableFuture<ManifestSnapshot> future = new CompletableFuture<>();
         private final long timeoutMillis;
+        private volatile long lastActivityNanos = System.nanoTime();
 
         private ManifestCollector(Duration timeout) {
             this.timeoutMillis = timeout.toMillis();
         }
 
         private void page(ManifestPage page) {
+            lastActivityNanos = System.nanoTime();
             entries.addAll(page.entries());
         }
 
@@ -241,27 +258,35 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
         }
 
         private ManifestSnapshot await() throws IOException {
-            try {
-                return future.get(timeoutMillis, TimeUnit.MILLISECONDS);
-            } catch (TimeoutException e) {
-                future.cancel(true);
-                throw new IOException("manifest request timed out", e);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IOException("manifest request interrupted", e);
-            } catch (ExecutionException e) {
-                throw asIOException("manifest request failed", e.getCause());
+            long timeoutNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+            while (true) {
+                try {
+                    return future.get(POLL_MILLIS, TimeUnit.MILLISECONDS);
+                } catch (TimeoutException e) {
+                    if (System.nanoTime() - lastActivityNanos > timeoutNanos) {
+                        future.cancel(true);
+                        throw new IOException("manifest request timed out", e);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("manifest request interrupted", e);
+                } catch (ExecutionException e) {
+                    throw asIOException("manifest request failed", e.getCause());
+                }
             }
         }
     }
 
     private static final class BlobCollector {
 
+        private static final long POLL_MILLIS = 200;
+
         private final BlobHash hash;
         private final Path tempFile;
         private final BlobDownload download;
         private final CompletableFuture<Void> future = new CompletableFuture<>();
         private final long timeoutMillis;
+        private volatile long lastActivityNanos = System.nanoTime();
         private boolean finished;
 
         private BlobCollector(Path tempDir, BlobHash hash, Duration timeout) throws IOException {
@@ -275,6 +300,7 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
             if (finished) {
                 return;
             }
+            lastActivityNanos = System.nanoTime();
             try {
                 download.apply(frame);
                 if (download.isCompleted()) {
@@ -310,17 +336,25 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
         }
 
         private void await() throws IOException {
-            try {
-                future.get(timeoutMillis, TimeUnit.MILLISECONDS);
-            } catch (TimeoutException e) {
-                fail(new IOException("blob download timed out", e));
-                throw new IOException("blob download timed out", e);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                fail(new IOException("blob download interrupted", e));
-                throw new IOException("blob download interrupted", e);
-            } catch (ExecutionException e) {
-                throw asIOException("blob download failed", e.getCause());
+            long timeoutNanos = TimeUnit.MILLISECONDS.toNanos(timeoutMillis);
+            while (true) {
+                try {
+                    future.get(POLL_MILLIS, TimeUnit.MILLISECONDS);
+                    return;
+                } catch (TimeoutException e) {
+                    if (System.nanoTime() - lastActivityNanos > timeoutNanos) {
+                        IOException failure = new IOException("blob download timed out", e);
+                        fail(failure);
+                        throw failure;
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    IOException failure = new IOException("blob download interrupted", e);
+                    fail(failure);
+                    throw failure;
+                } catch (ExecutionException e) {
+                    throw asIOException("blob download failed", e.getCause());
+                }
             }
         }
 

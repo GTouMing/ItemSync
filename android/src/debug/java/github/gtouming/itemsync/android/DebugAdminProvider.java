@@ -87,8 +87,12 @@ public final class DebugAdminProvider extends ContentProvider {
                 peer.addProperty("locallyTrusted", view.locallyTrusted());
                 peer.addProperty("remoteTrust", view.remoteTrust().name());
                 peer.addProperty("connected", view.connected());
-                peer.addProperty("remoteTrustError",
-                        view.remoteTrustError() == null ? "" : view.remoteTrustError());
+                peer.addProperty("remoteTrustFailure",
+                        view.remoteTrustFailure() == null ? "" : view.remoteTrustFailure().name());
+                peer.addProperty("remoteTrustErrorDetail",
+                        view.remoteTrustErrorDetail() == null
+                                ? ""
+                                : view.remoteTrustErrorDetail());
                 peer.addProperty("lastSeen", view.presence().lastSeen().toString());
                 peers.add(peer);
             }

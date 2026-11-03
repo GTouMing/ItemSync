@@ -12,6 +12,8 @@ import java.util.Objects;
 
 public final class TlsTransportClient implements AutoCloseable {
 
+    private static final Duration DEFAULT_CONNECT_TIMEOUT = Duration.ofSeconds(10);
+
     private final FrameConnection connection;
 
     private TlsTransportClient(FrameConnection connection) {
@@ -21,24 +23,25 @@ public final class TlsTransportClient implements AutoCloseable {
     public static TlsTransportClient connect(String host, int port, TlsIdentity identity,
                                              String expectedServerFingerprint, FrameHandler handler)
             throws IOException {
-        return connect(host, port, identity, expectedServerFingerprint, handler, null);
+        return connect(host, port, identity, expectedServerFingerprint, handler,
+                DEFAULT_CONNECT_TIMEOUT, Duration.ZERO);
     }
 
     public static TlsTransportClient connect(String host, int port, TlsIdentity identity,
                                              String expectedServerFingerprint, FrameHandler handler,
-                                             Duration timeout) throws IOException {
+                                             Duration connectTimeout, Duration readTimeout)
+            throws IOException {
         Objects.requireNonNull(host, "host");
         Objects.requireNonNull(identity, "identity");
-        int timeoutMillis = timeout == null
-                ? 0
-                : (int) Math.min(Integer.MAX_VALUE, Math.max(1, timeout.toMillis()));
+        Objects.requireNonNull(connectTimeout, "connectTimeout");
+        Objects.requireNonNull(readTimeout, "readTimeout");
         SSLSocket socket = (SSLSocket) identity
                 .sslContext(expectedServerFingerprint)
                 .getSocketFactory()
                 .createSocket();
         try {
-            socket.connect(new InetSocketAddress(host, port), timeoutMillis);
-            socket.setSoTimeout(timeoutMillis);
+            socket.connect(new InetSocketAddress(host, port), millis(connectTimeout));
+            socket.setSoTimeout(millis(readTimeout));
             socket.setUseClientMode(true);
             socket.setEnabledProtocols(new String[] {TlsIdentity.PROTOCOL});
             socket.startHandshake();
@@ -71,5 +74,12 @@ public final class TlsTransportClient implements AutoCloseable {
     @Override
     public void close() {
         connection.close();
+    }
+
+    private static int millis(Duration value) {
+        if (value.isZero() || value.isNegative()) {
+            return 0;
+        }
+        return (int) Math.min(Integer.MAX_VALUE, Math.max(1, value.toMillis()));
     }
 }

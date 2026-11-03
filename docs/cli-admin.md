@@ -79,6 +79,16 @@ content://github.gtouming.itemsync.debug.admin/admin
 
 CLI 通过 `adb shell content call` 调用，provider 用 Base64 JSON 返回结果。该 provider 只存在于 debug 构建，不进入 release。
 
+调试方法：
+
+```powershell
+adb shell content call --uri content://github.gtouming.itemsync.debug.admin --method status
+adb shell content call --uri content://github.gtouming.itemsync.debug.admin --method trust.list
+adb shell content call --uri content://github.gtouming.itemsync.debug.admin --method peers
+```
+
+`peers` 的 `result` 是 Base64 JSON。每个 peer 包含 `pairingPort`、`locallyTrusted`、`remoteTrust`、`connected`、`remoteTrustFailure` 和 `remoteTrustErrorDetail`。`remoteTrustFailure` 是结构化原因（`NO_PAIRING_ENDPOINT`、`QUERY_TIMEOUT`、`IDENTITY_MISMATCH`、`CONNECTION_FAILED`）；`remoteTrustErrorDetail` 仅供排障，不进入 UI。
+
 ## 不做什么
 
 - 不修改本机密码、NUK、身份密钥库。

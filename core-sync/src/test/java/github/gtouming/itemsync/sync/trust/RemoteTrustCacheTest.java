@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -23,16 +24,16 @@ class RemoteTrustCacheTest {
     void returnsCachedValueWithinTtl() {
         RemoteTrustCache cache = new RemoteTrustCache(() -> T0);
 
-        cache.put("fingerprint", RemoteTrust.TRUSTED, Duration.ofSeconds(30));
+        cache.put("fingerprint", RemoteTrustOutcome.trusted(), Duration.ofSeconds(30));
 
-        assertEquals(RemoteTrust.TRUSTED, cache.get("fingerprint").orElseThrow());
+        assertEquals(RemoteTrust.TRUSTED, cache.get("fingerprint").orElseThrow().trust());
     }
 
     @Test
     void expiresCachedValueAfterTtl() {
         Instant[] now = {T0};
         RemoteTrustCache cache = new RemoteTrustCache(() -> now[0]);
-        cache.put("fingerprint", RemoteTrust.UNTRUSTED, Duration.ofSeconds(30));
+        cache.put("fingerprint", RemoteTrustOutcome.untrusted(), Duration.ofSeconds(30));
 
         now[0] = T0.plusSeconds(30);
 
@@ -42,7 +43,7 @@ class RemoteTrustCacheTest {
     @Test
     void invalidateRemovesTheEntry() {
         RemoteTrustCache cache = new RemoteTrustCache(() -> T0);
-        cache.put("fingerprint", RemoteTrust.TRUSTED, Duration.ofSeconds(30));
+        cache.put("fingerprint", RemoteTrustOutcome.trusted(), Duration.ofSeconds(30));
 
         cache.invalidate("fingerprint");
 
@@ -52,8 +53,21 @@ class RemoteTrustCacheTest {
     @Test
     void keysAreCaseInsensitive() {
         RemoteTrustCache cache = new RemoteTrustCache(() -> T0);
-        cache.put("ABCDEF", RemoteTrust.TRUSTED, Duration.ofSeconds(30));
+        cache.put("ABCDEF", RemoteTrustOutcome.trusted(), Duration.ofSeconds(30));
 
-        assertEquals(RemoteTrust.TRUSTED, cache.get("abcdef").orElseThrow());
+        assertEquals(RemoteTrust.TRUSTED, cache.get("abcdef").orElseThrow().trust());
+    }
+
+    @Test
+    void pruneRemovesOfflineFingerprints() {
+        RemoteTrustCache cache = new RemoteTrustCache(() -> T0);
+        cache.put("online", RemoteTrustOutcome.trusted(), Duration.ofSeconds(30));
+        cache.put("offline", RemoteTrustOutcome.unknown(
+                RemoteTrustFailure.QUERY_TIMEOUT, "timed out"), Duration.ofSeconds(5));
+
+        cache.prune(Set.of("online"));
+
+        assertEquals(RemoteTrust.TRUSTED, cache.get("online").orElseThrow().trust());
+        assertTrue(cache.get("offline").isEmpty());
     }
 }

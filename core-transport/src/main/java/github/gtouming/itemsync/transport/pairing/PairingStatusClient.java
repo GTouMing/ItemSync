@@ -10,6 +10,7 @@ import github.gtouming.itemsync.transport.frame.PairingStatusRequest;
 import github.gtouming.itemsync.transport.frame.PairingStatusResponse;
 import github.gtouming.itemsync.transport.net.FrameConnection;
 import github.gtouming.itemsync.transport.net.FrameHandler;
+import github.gtouming.itemsync.transport.net.PeerCertificateMismatchException;
 import github.gtouming.itemsync.transport.net.TlsTransportClient;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
@@ -40,6 +41,7 @@ public final class PairingStatusClient {
         Objects.requireNonNull(expectedDeviceId, "expectedDeviceId");
         Objects.requireNonNull(timeout, "timeout");
 
+        long deadline = System.nanoTime() + timeout.toNanos();
         CompletableFuture<PairingStatusResponse> future = new CompletableFuture<>();
         FrameHandler handler = new FrameHandler() {
             @Override
@@ -69,50 +71,70 @@ public final class PairingStatusClient {
             }
         };
 
+        Duration connectBudget = remaining(deadline);
         try (TlsTransportClient client = TlsTransportClient.connect(
-                host, port, identity, expectedServerFingerprint, handler, timeout)) {
+                host, port, identity, expectedServerFingerprint, handler,
+                connectBudget, connectBudget.plusSeconds(1))) {
             client.send(new Frame(FrameType.PAIRING_STATUS,
                     FramePayloads.encodePairingStatusRequest(new PairingStatusRequest(group))));
-            PairingStatusResponse response = await(future, timeout);
+            PairingStatusResponse response = await(future, remaining(deadline));
             String actualFingerprint = client.connection().peerFingerprint();
             validate(response, group, expectedNodeId, expectedDeviceId,
                     expectedServerFingerprint, actualFingerprint);
             return new Result(response, actualFingerprint);
+        } catch (PairingStatusException e) {
+            throw e;
+        } catch (PeerCertificateMismatchException e) {
+            throw new PairingStatusException(PairingStatusException.Reason.IDENTITY_MISMATCH,
+                    "pairing endpoint certificate mismatch", e);
+        } catch (IOException | RuntimeException e) {
+            throw new PairingStatusException(PairingStatusException.Reason.CONNECTION_FAILED,
+                    "pairing endpoint connection failed", e);
         }
     }
 
     private static PairingStatusResponse await(CompletableFuture<PairingStatusResponse> future,
-                                               Duration timeout) throws IOException {
+                                               Duration timeout) throws PairingStatusException {
         try {
-            return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+            return future.get(Math.max(0, timeout.toMillis()), TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
             future.cancel(true);
-            throw new IOException("pairing status timed out", e);
+            throw new PairingStatusException(PairingStatusException.Reason.TIMEOUT,
+                    "pairing status timed out", e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new IOException("pairing status interrupted", e);
+            throw new PairingStatusException(PairingStatusException.Reason.CONNECTION_FAILED,
+                    "pairing status interrupted", e);
         } catch (ExecutionException e) {
-            if (e.getCause() instanceof IOException io) {
-                throw io;
-            }
-            throw new IOException("pairing status failed", e.getCause());
+            throw new PairingStatusException(PairingStatusException.Reason.CONNECTION_FAILED,
+                    "pairing status failed", e.getCause());
         }
     }
 
     private static void validate(PairingStatusResponse response, GroupId group,
                                  NodeId expectedNodeId, DeviceId expectedDeviceId,
                                  String expectedFingerprint, String actualFingerprint)
-            throws IOException {
+            throws PairingStatusException {
         if (!group.equals(response.groupId())) {
-            throw new IOException("pairing status group mismatch");
+            throw identityMismatch("pairing status group mismatch");
         }
         if (!expectedNodeId.equals(response.nodeId())
                 || !expectedDeviceId.equals(response.deviceId())) {
-            throw new IOException("pairing status identity mismatch");
+            throw identityMismatch("pairing status identity mismatch");
         }
         if (!expectedFingerprint.equalsIgnoreCase(response.fingerprint())
                 || !expectedFingerprint.equalsIgnoreCase(actualFingerprint)) {
-            throw new IOException("pairing status fingerprint mismatch");
+            throw identityMismatch("pairing status fingerprint mismatch");
         }
+    }
+
+    private static PairingStatusException identityMismatch(String message) {
+        return new PairingStatusException(
+                PairingStatusException.Reason.IDENTITY_MISMATCH, message);
+    }
+
+    private static Duration remaining(long deadlineNanos) {
+        long left = deadlineNanos - System.nanoTime();
+        return left <= 0 ? Duration.ZERO : Duration.ofNanos(left);
     }
 }

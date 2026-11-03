@@ -7,6 +7,7 @@ import github.gtouming.itemsync.transport.discovery.DiscoveredPeer;
 import github.gtouming.itemsync.transport.discovery.PresenceTracker;
 import github.gtouming.itemsync.transport.net.PeerCertificateMismatchException;
 import github.gtouming.itemsync.transport.pairing.PairingStatusClient;
+import github.gtouming.itemsync.transport.pairing.PairingStatusException;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import java.io.IOException;
@@ -15,16 +16,17 @@ import java.net.InetAddress;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Supplier;
 
 public final class PeerTrustCoordinator implements AutoCloseable {
 
@@ -33,11 +35,11 @@ public final class PeerTrustCoordinator implements AutoCloseable {
     private static final Duration PAIRING_QUERY_TIMEOUT = Duration.ofSeconds(2);
 
     private final GroupId group;
-    private final TlsIdentity identity;
     private final SyncNode node;
     private final PeerTrustStore trustStore;
-    private final Map<String, String> remoteTrustErrors = new ConcurrentHashMap<>();
-    private final RemoteTrustCache remoteTrustCache = new RemoteTrustCache(Instant::now);
+    private final ConnectionProbe connectionProbe;
+    private final PairingQuery pairingQuery;
+    private final RemoteTrustCache remoteTrustCache;
     private final ExecutorService statusExecutor = Executors.newFixedThreadPool(4, runnable -> {
         Thread thread = new Thread(runnable, "itemsync-pairing-status");
         thread.setDaemon(true);
@@ -47,14 +49,23 @@ public final class PeerTrustCoordinator implements AutoCloseable {
 
     public PeerTrustCoordinator(GroupId group, TlsIdentity identity, SyncNode node,
                                 PeerTrustStore trustStore) {
+        this(group, node, trustStore, probe(node), query(identity, group), Instant::now);
+    }
+
+    PeerTrustCoordinator(GroupId group, SyncNode node, PeerTrustStore trustStore,
+                         ConnectionProbe connectionProbe, PairingQuery pairingQuery,
+                         Supplier<Instant> clock) {
         this.group = Objects.requireNonNull(group, "group");
-        this.identity = Objects.requireNonNull(identity, "identity");
-        this.node = Objects.requireNonNull(node, "node");
+        this.node = node;
         this.trustStore = Objects.requireNonNull(trustStore, "trustStore");
+        this.connectionProbe = Objects.requireNonNull(connectionProbe, "connectionProbe");
+        this.pairingQuery = Objects.requireNonNull(pairingQuery, "pairingQuery");
+        this.remoteTrustCache = new RemoteTrustCache(Objects.requireNonNull(clock, "clock"));
     }
 
     public List<PresenceTracker.Presence> onlinePeers() {
         List<PresenceTracker.Presence> peers = node.onlinePeers();
+        pruneCache(peers);
         for (PresenceTracker.Presence presence : peers) {
             if (isTrusted(presence.peer())) {
                 try {
@@ -92,7 +103,7 @@ public final class PeerTrustCoordinator implements AutoCloseable {
     }
 
     public boolean isConnected(DiscoveredPeer peer) {
-        return node.isConnected(peer.nodeId());
+        return connectionProbe.isConnected(peer);
     }
 
     public String lastWarning() {
@@ -126,6 +137,7 @@ public final class PeerTrustCoordinator implements AutoCloseable {
 
     public void reconcileTrustedPeers() {
         List<PresenceTracker.Presence> peers = node.onlinePeers();
+        pruneCache(peers);
         for (PresenceTracker.Presence presence : peers) {
             if (isTrusted(presence.peer())) {
                 try {
@@ -141,6 +153,7 @@ public final class PeerTrustCoordinator implements AutoCloseable {
 
     public void refreshRemoteTrust() {
         List<PresenceTracker.Presence> peers = node.onlinePeers();
+        pruneCache(peers);
         for (PresenceTracker.Presence presence : peers) {
             if (presence.peer().pairingPort() <= 0) {
                 continue;
@@ -158,53 +171,45 @@ public final class PeerTrustCoordinator implements AutoCloseable {
         statusExecutor.shutdownNow();
     }
 
-    private PeerView viewOf(PresenceTracker.Presence presence, boolean forceRefresh) {
+    PeerView viewOf(PresenceTracker.Presence presence, boolean forceRefresh) {
         DiscoveredPeer peer = presence.peer();
-        boolean connected = isConnected(peer);
+        boolean connected = connectionProbe.isConnected(peer);
         if (connected) {
-            return new PeerView(presence, isTrusted(peer), RemoteTrust.TRUSTED, true, null);
+            return new PeerView(presence, isTrusted(peer), RemoteTrust.TRUSTED, true, null, null);
         }
-        RemoteTrust remote = remoteTrust(peer, forceRefresh);
-        return new PeerView(presence, isTrusted(peer), remote, false,
-                remoteTrustErrors.get(normalized(peer.fingerprint())));
+        RemoteTrustOutcome outcome = remoteTrust(peer, forceRefresh);
+        return new PeerView(presence, isTrusted(peer), outcome.trust(), false,
+                outcome.failure(), outcome.detail());
     }
 
-    private RemoteTrust remoteTrust(DiscoveredPeer peer, boolean forceRefresh) {
-        String fingerprint = normalized(peer.fingerprint());
+    private RemoteTrustOutcome remoteTrust(DiscoveredPeer peer, boolean forceRefresh) {
         if (peer.pairingPort() <= 0) {
-            remoteTrustErrors.put(fingerprint, "对端未发布配对端口");
-            return RemoteTrust.UNKNOWN;
+            return RemoteTrustOutcome.unknown(RemoteTrustFailure.NO_PAIRING_ENDPOINT, null);
         }
         if (!forceRefresh) {
-            Optional<RemoteTrust> cached = remoteTrustCache.get(peer.fingerprint());
+            Optional<RemoteTrustOutcome> cached = remoteTrustCache.get(peer.fingerprint());
             if (cached.isPresent()) {
                 return cached.get();
             }
         }
         try {
-            InetAddress address = addressOf(peer);
-            PairingStatusClient.Result result = PairingStatusClient.query(
-                    address.getHostAddress(), peer.pairingPort(), identity, peer.fingerprint(),
-                    group, peer.nodeId(), peer.deviceId(), PAIRING_QUERY_TIMEOUT);
-            RemoteTrust trust = result.response().trustsPeer()
-                    ? RemoteTrust.TRUSTED
-                    : RemoteTrust.UNTRUSTED;
-            remoteTrustCache.put(peer.fingerprint(), trust, REMOTE_TRUST_TTL);
-            remoteTrustErrors.remove(fingerprint);
-            return trust;
+            PairingStatusClient.Result result = pairingQuery.query(peer, PAIRING_QUERY_TIMEOUT);
+            RemoteTrustOutcome outcome = result.response().trustsPeer()
+                    ? RemoteTrustOutcome.trusted()
+                    : RemoteTrustOutcome.untrusted();
+            remoteTrustCache.put(peer.fingerprint(), outcome, REMOTE_TRUST_TTL);
+            return outcome;
+        } catch (PairingStatusException e) {
+            RemoteTrustOutcome outcome = RemoteTrustOutcome.unknown(
+                    failureOf(e.reason()), detail(e));
+            remoteTrustCache.put(peer.fingerprint(), outcome, REMOTE_TRUST_FAILURE_TTL);
+            return outcome;
         } catch (IOException | RuntimeException e) {
-            remoteTrustCache.put(peer.fingerprint(), RemoteTrust.UNKNOWN,
-                    REMOTE_TRUST_FAILURE_TTL);
-            remoteTrustErrors.put(fingerprint, describe(e));
-            return RemoteTrust.UNKNOWN;
+            RemoteTrustOutcome outcome = RemoteTrustOutcome.unknown(
+                    RemoteTrustFailure.CONNECTION_FAILED, detail(e));
+            remoteTrustCache.put(peer.fingerprint(), outcome, REMOTE_TRUST_FAILURE_TTL);
+            return outcome;
         }
-    }
-
-    private static String describe(Exception failure) {
-        String message = failure.getMessage();
-        return message == null || message.trim().isEmpty()
-                ? failure.getClass().getSimpleName()
-                : failure.getClass().getSimpleName() + ": " + message;
     }
 
     private void connect(DiscoveredPeer peer) throws IOException {
@@ -231,6 +236,40 @@ public final class PeerTrustCoordinator implements AutoCloseable {
         lastWarning = "对端证书与缓存的指纹不匹配，已关闭对 " + peer.deviceId().value() + " 的信任";
     }
 
+    private void pruneCache(List<PresenceTracker.Presence> peers) {
+        Set<String> online = new HashSet<>();
+        for (PresenceTracker.Presence presence : peers) {
+            online.add(normalized(presence.peer().fingerprint()));
+        }
+        remoteTrustCache.prune(online);
+    }
+
+    private static RemoteTrustFailure failureOf(PairingStatusException.Reason reason) {
+        return switch (reason) {
+            case TIMEOUT -> RemoteTrustFailure.QUERY_TIMEOUT;
+            case IDENTITY_MISMATCH -> RemoteTrustFailure.IDENTITY_MISMATCH;
+            case CONNECTION_FAILED -> RemoteTrustFailure.CONNECTION_FAILED;
+        };
+    }
+
+    private static String detail(Exception failure) {
+        String message = failure.getMessage();
+        return message == null || message.trim().isEmpty() ? null : message;
+    }
+
+    private static ConnectionProbe probe(SyncNode node) {
+        Objects.requireNonNull(node, "node");
+        return peer -> node.isConnected(peer.nodeId())
+                || node.hasInboundConnection(peer.fingerprint());
+    }
+
+    private static PairingQuery query(TlsIdentity identity, GroupId group) {
+        Objects.requireNonNull(identity, "identity");
+        return (peer, timeout) -> PairingStatusClient.query(
+                addressOf(peer).getHostAddress(), peer.pairingPort(), identity,
+                peer.fingerprint(), group, peer.nodeId(), peer.deviceId(), timeout);
+    }
+
     private static InetAddress addressOf(DiscoveredPeer peer) throws IOException {
         InetAddress address = peer.addresses().stream()
                 .filter(candidate -> candidate instanceof Inet4Address)
@@ -246,8 +285,19 @@ public final class PeerTrustCoordinator implements AutoCloseable {
         return fingerprint.trim().toLowerCase(Locale.ROOT);
     }
 
+    @FunctionalInterface
+    interface ConnectionProbe {
+        boolean isConnected(DiscoveredPeer peer);
+    }
+
+    @FunctionalInterface
+    interface PairingQuery {
+        PairingStatusClient.Result query(DiscoveredPeer peer, Duration timeout) throws IOException;
+    }
+
     public record PeerView(PresenceTracker.Presence presence, boolean locallyTrusted,
                            RemoteTrust remoteTrust, boolean connected,
-                           String remoteTrustError) {
+                           RemoteTrustFailure remoteTrustFailure,
+                           String remoteTrustErrorDetail) {
     }
 }

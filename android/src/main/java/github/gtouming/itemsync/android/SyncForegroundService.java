@@ -72,7 +72,8 @@ public final class SyncForegroundService extends Service {
     private static volatile boolean running;
     private static volatile SyncForegroundService instance;
 
-    public static SyncForegroundService instance() {
+    // Used only by the debug-only admin provider.
+    static SyncForegroundService instance() {
         return instance;
     }
 
@@ -114,8 +115,12 @@ public final class SyncForegroundService extends Service {
     }
 
     public List<PeerTrustCoordinator.PeerView> peerViews() {
+        return peerViews(true);
+    }
+
+    public List<PeerTrustCoordinator.PeerView> peerViews(boolean forceRefresh) {
         PeerTrustCoordinator current = peerTrust;
-        return current == null ? Compat.list() : current.peerViews();
+        return current == null ? Compat.list() : current.peerViews(forceRefresh);
     }
 
     public void trustPeer(DiscoveredPeer peer) throws IOException {

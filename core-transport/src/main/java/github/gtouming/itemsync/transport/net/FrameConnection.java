@@ -12,6 +12,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.UncheckedIOException;
 import java.net.SocketException;
+import java.net.SocketTimeoutException;
 import java.security.cert.X509Certificate;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -69,7 +70,13 @@ public final class FrameConnection implements AutoCloseable {
     private void readLoop() {
         try {
             while (!closed.get()) {
-                handler.onFrame(this, FrameCodec.read(input));
+                try {
+                    handler.onFrame(this, FrameCodec.read(input));
+                } catch (SocketTimeoutException e) {
+                    if (!closed.get()) {
+                        handler.onIdle(this);
+                    }
+                }
             }
         } catch (EOFException | SocketException e) {
             // peer closed the connection

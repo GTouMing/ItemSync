@@ -7,6 +7,8 @@ import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.store.metadata.jdbc.JdbcMetadataStore;
 import github.gtouming.itemsync.sync.apply.PathResolvers;
+import github.gtouming.itemsync.transport.net.TlsTransportClient;
+import github.gtouming.itemsync.transport.tls.PinnedTrustManager;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -22,6 +24,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -129,10 +134,37 @@ class SyncNodeTest {
     }
 
     @Test
+    void inboundConnectionCountsWithoutAnOutboundLink() throws Exception {
+        a.removePeer(NODE_B);
+
+        await(() -> !a.isConnected(NODE_B), "A drops its outbound link");
+        assertTrue(a.hasInboundConnection(identityB.fingerprint()));
+    }
+
+    @Test
+    void inboundFingerprintMismatchClearsAfterTheNewFingerprintIsAllowed() throws Exception {
+        TlsIdentity other = TlsIdentity.generate("other");
+
+        assertThrows(IOException.class, () -> TlsTransportClient.connect(
+                "127.0.0.1", a.port(), other, identityA.fingerprint(),
+                (connection, frame) -> {
+                }));
+
+        await(() -> a.lastError() != null, "A records the inbound mismatch");
+        PinnedTrustManager.FingerprintMismatchException mismatch =
+                PinnedTrustManager.findFingerprintMismatch(a.lastError());
+        assertNotNull(mismatch);
+        assertTrue(mismatch.actualFingerprint().equalsIgnoreCase(other.fingerprint()));
+
+        a.allowClient(other.fingerprint());
+
+        assertNull(a.lastError());
+    }
+
+    @Test
     void revocationClosesTheOtherSidesConnection() throws Exception {
         assertTrue(a.isConnected(NODE_B));
         assertTrue(b.isConnected(NODE_A));
-        Thread.sleep(100);
 
         a.revokeClient(identityB.fingerprint());
         await(() -> !b.isConnected(NODE_A), "B notices that A revoked it");

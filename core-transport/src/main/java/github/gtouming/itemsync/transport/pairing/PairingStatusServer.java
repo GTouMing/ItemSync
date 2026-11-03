@@ -37,7 +37,6 @@ public final class PairingStatusServer implements FrameHandler {
             connection.close();
             return;
         }
-        boolean responded = false;
         try {
             PairingStatusRequest request = FramePayloads.decodePairingStatusRequest(frame.payload());
             if (!groupId.equals(request.groupId())) {
@@ -48,14 +47,10 @@ public final class PairingStatusServer implements FrameHandler {
                     fingerprint, trusts);
             connection.send(new Frame(FrameType.PAIRING_STATUS_ACK,
                     FramePayloads.encodePairingStatusResponse(response)));
-            responded = true;
-            // The client closes after receiving the response; closing here races the write.
         } catch (RuntimeException ignored) {
             // invalid request or the connection is already broken
         } finally {
-            if (!responded) {
-                connection.close();
-            }
+            connection.close();
         }
     }
 

@@ -14,6 +14,13 @@ import github.gtouming.itemsync.sync.engine.SyncEngine;
 import github.gtouming.itemsync.sync.engine.SyncRunResult;
 import github.gtouming.itemsync.sync.plan.SyncPlanner;
 import github.gtouming.itemsync.sync.state.LocalReconciler;
+import github.gtouming.itemsync.transport.frame.Frame;
+import github.gtouming.itemsync.transport.frame.FramePayloads;
+import github.gtouming.itemsync.transport.frame.FrameType;
+import github.gtouming.itemsync.transport.frame.ManifestEnd;
+import github.gtouming.itemsync.transport.frame.ManifestPage;
+import github.gtouming.itemsync.transport.net.FrameConnection;
+import github.gtouming.itemsync.transport.net.FrameHandler;
 import github.gtouming.itemsync.transport.net.TlsTransportServer;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 import org.junit.jupiter.api.AfterEach;
@@ -119,6 +126,44 @@ class TlsRemotePeerTest {
     }
 
     @Test
+    void manifestProgressResetsTheTimeout() throws Exception {
+        a.write("a.txt", "a");
+        a.write("b.txt", "b");
+        List<ManifestEntry> manifest = a.reconcile();
+        FrameHandler handler = new FrameHandler() {
+            @Override
+            public void onFrame(FrameConnection connection, Frame frame) {
+                if (frame.type() != FrameType.MANIFEST_REQUEST) {
+                    return;
+                }
+                int first = Math.max(1, manifest.size() / 3);
+                int second = Math.max(first, manifest.size() * 2 / 3);
+                connection.send(page(manifest.subList(0, first)));
+                sleep(500);
+                connection.send(page(manifest.subList(first, second)));
+                sleep(500);
+                connection.send(page(manifest.subList(second, manifest.size())));
+                connection.send(new Frame(FrameType.MANIFEST_END,
+                        FramePayloads.encodeManifestEnd(
+                                new ManifestEnd(manifest.size(), 0L))));
+            }
+        };
+
+        try (TlsTransportServer server = new TlsTransportServer(
+                serverIdentity, clientIdentity.fingerprint(), 0, handler)) {
+            server.start();
+            try (TlsRemotePeer peer = TlsRemotePeer.connect(
+                    "127.0.0.1", server.port(), clientIdentity,
+                    serverIdentity.fingerprint(), NODE_A, temp.resolve("downloads"),
+                    Duration.ofMillis(800), Duration.ZERO)) {
+                ManifestSnapshot snapshot = peer.manifest(ROOT, 0L);
+
+                assertEquals(manifest.size(), snapshot.entries().size());
+            }
+        }
+    }
+
+    @Test
     void pullsThroughTlsRemotePeer() throws Exception {
         a.write("docs/a.txt", "from-a");
         List<ManifestEntry> manifest = a.reconcile();
@@ -129,6 +174,19 @@ class TlsRemotePeerTest {
 
             assertEquals(2, result.pulled());
             assertEquals("from-a", b.read("docs/a.txt"));
+        }
+    }
+
+    private static Frame page(List<ManifestEntry> entries) {
+        return new Frame(FrameType.MANIFEST_PAGE,
+                FramePayloads.encodeManifestPage(new ManifestPage(entries, null)));
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 

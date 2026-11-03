@@ -34,6 +34,7 @@ import github.gtouming.itemsync.transport.discovery.JmDnsPeerDiscovery;
 import github.gtouming.itemsync.transport.discovery.PeerAdvertisement;
 import github.gtouming.itemsync.transport.discovery.PresenceTracker;
 import github.gtouming.itemsync.transport.net.FrameConnection;
+import github.gtouming.itemsync.transport.net.HeartbeatHandler;
 import github.gtouming.itemsync.transport.net.TlsTransportServer;
 import github.gtouming.itemsync.transport.pairing.PairingStatusServer;
 import github.gtouming.itemsync.transport.pairing.PairingTrustManager;
@@ -45,6 +46,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -60,6 +62,9 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public final class SyncNode implements AutoCloseable {
+
+    private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(10);
+    private static final Duration PAIRING_READ_TIMEOUT = Duration.ofSeconds(5);
 
     private final NodeId nodeId;
     private final GroupId groupId;
@@ -92,6 +97,7 @@ public final class SyncNode implements AutoCloseable {
     private volatile long manifestSequence;
     private volatile LogicalClock clock = LogicalClock.ZERO;
     private volatile IOException lastError;
+    private volatile String lastRejectedFingerprint;
 
     public SyncNode(NodeId nodeId, GroupId groupId, SyncRootId rootId, Path syncRoot,
                     MetadataStore store, BlobStore blobs, PhysicalPathResolver paths,
@@ -152,7 +158,8 @@ public final class SyncNode implements AutoCloseable {
         PinnedTrustManager trustManager = new PinnedTrustManager(expectedClientFingerprints);
         this.trustManager = trustManager;
         this.server = new TlsTransportServer(identity, trustManager, port,
-                this::onInboundFrame, this::onInboundHandshakeFailure);
+                new HeartbeatHandler(this::onInboundFrame), this::onInboundHandshakeFailure,
+                HEARTBEAT_INTERVAL);
         this.server.start();
         this.transferTempDir = tempDir;
 
@@ -162,7 +169,8 @@ public final class SyncNode implements AutoCloseable {
             try {
                 pairing = new TlsTransportServer(identity, new PairingTrustManager(), 0,
                         new PairingStatusServer(groupId, nodeId, deviceId,
-                                identity.fingerprint(), pairingTrust));
+                                identity.fingerprint(), pairingTrust),
+                        null, PAIRING_READ_TIMEOUT);
                 pairing.start();
                 pairingPort = pairing.port();
             } catch (IOException | RuntimeException e) {
@@ -215,6 +223,11 @@ public final class SyncNode implements AutoCloseable {
 
     public void allowClient(String fingerprint) {
         trustManager.allow(fingerprint);
+        if (lastRejectedFingerprint != null
+                && lastRejectedFingerprint.equalsIgnoreCase(fingerprint)) {
+            lastRejectedFingerprint = null;
+            lastError = null;
+        }
     }
 
     public void revokeClient(String fingerprint) {
@@ -241,6 +254,10 @@ public final class SyncNode implements AutoCloseable {
     public boolean isConnected(NodeId peerNodeId) {
         PeerLink link = peers.get(peerNodeId);
         return link != null && link.remote.isConnected();
+    }
+
+    public boolean hasInboundConnection(String fingerprint) {
+        return server.hasConnection(fingerprint);
     }
 
     public NodeId nodeId() {
@@ -337,6 +354,11 @@ public final class SyncNode implements AutoCloseable {
     }
 
     private void onInboundFrame(FrameConnection connection, Frame frame) {
+        if (lastRejectedFingerprint != null
+                && lastRejectedFingerprint.equalsIgnoreCase(connection.peerFingerprint())) {
+            lastRejectedFingerprint = null;
+            lastError = null;
+        }
         if (frame.type() == FrameType.NOTIFY) {
             handleNotify(connection, frame);
         } else {
@@ -345,6 +367,11 @@ public final class SyncNode implements AutoCloseable {
     }
 
     private void onInboundHandshakeFailure(IOException failure) {
+        PinnedTrustManager.FingerprintMismatchException mismatch =
+                PinnedTrustManager.findFingerprintMismatch(failure);
+        if (mismatch != null) {
+            lastRejectedFingerprint = mismatch.actualFingerprint();
+        }
         lastError = failure;
     }
 

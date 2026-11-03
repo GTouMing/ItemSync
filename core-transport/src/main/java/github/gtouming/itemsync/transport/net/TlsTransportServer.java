@@ -11,12 +11,14 @@ import javax.net.ssl.SSLSocket;
 import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
 import java.net.SocketException;
+import java.time.Duration;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
 public final class TlsTransportServer implements AutoCloseable {
@@ -24,6 +26,7 @@ public final class TlsTransportServer implements AutoCloseable {
     private final SSLServerSocket serverSocket;
     private final FrameHandler handler;
     private final Consumer<IOException> handshakeFailure;
+    private final int readTimeoutMillis;
     private final Set<FrameConnection> connections = ConcurrentHashMap.newKeySet();
     private final ExecutorService workers = Executors.newCachedThreadPool(runnable -> {
         Thread thread = new Thread(runnable, "itemsync-transport-server");
@@ -31,6 +34,7 @@ public final class TlsTransportServer implements AutoCloseable {
         return thread;
     });
     private final AtomicBoolean running = new AtomicBoolean();
+    private final AtomicLong connectionEpoch = new AtomicLong();
     private Thread acceptThread;
 
     public TlsTransportServer(TlsIdentity identity, String expectedClientFingerprint,
@@ -56,10 +60,19 @@ public final class TlsTransportServer implements AutoCloseable {
     public TlsTransportServer(TlsIdentity identity, X509TrustManager trustManager,
                               int port, FrameHandler handler,
                               Consumer<IOException> handshakeFailure) throws IOException {
+        this(identity, trustManager, port, handler, handshakeFailure, Duration.ZERO);
+    }
+
+    public TlsTransportServer(TlsIdentity identity, X509TrustManager trustManager,
+                              int port, FrameHandler handler,
+                              Consumer<IOException> handshakeFailure,
+                              Duration readTimeout) throws IOException {
         Objects.requireNonNull(identity, "identity");
         Objects.requireNonNull(trustManager, "trustManager");
+        Objects.requireNonNull(readTimeout, "readTimeout");
         this.handler = Objects.requireNonNull(handler, "handler");
         this.handshakeFailure = handshakeFailure;
+        this.readTimeoutMillis = millis(readTimeout);
         SSLServerSocket socket = (SSLServerSocket) identity
                 .sslContext(trustManager)
                 .getServerSocketFactory()
@@ -84,14 +97,29 @@ public final class TlsTransportServer implements AutoCloseable {
     }
 
     public void closeConnections() {
+        connectionEpoch.incrementAndGet();
         for (FrameConnection connection : connections) {
             connection.close();
         }
         connections.clear();
     }
 
+    public boolean hasConnection(String fingerprint) {
+        if (fingerprint == null) {
+            return false;
+        }
+        String key = fingerprint.trim();
+        for (FrameConnection connection : connections) {
+            if (connection.peerFingerprint().equalsIgnoreCase(key)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public void close() {
+        connectionEpoch.incrementAndGet();
         running.set(false);
         try {
             serverSocket.close();
@@ -103,6 +131,13 @@ public final class TlsTransportServer implements AutoCloseable {
         }
         connections.clear();
         workers.shutdownNow();
+    }
+
+    private static int millis(Duration value) {
+        if (value.isZero() || value.isNegative()) {
+            return 0;
+        }
+        return (int) Math.min(Integer.MAX_VALUE, Math.max(1, value.toMillis()));
     }
 
     private void acceptLoop() {
@@ -121,12 +156,19 @@ public final class TlsTransportServer implements AutoCloseable {
     }
 
     private void serve(SSLSocket socket) {
+        long startedEpoch = connectionEpoch.get();
         try {
+            socket.setSoTimeout(readTimeoutMillis);
             socket.setUseClientMode(false);
             socket.setEnabledProtocols(new String[] {TlsIdentity.PROTOCOL});
             socket.startHandshake();
             FrameConnection connection = new FrameConnection(socket, trackingHandler());
             connections.add(connection);
+            if (connectionEpoch.get() != startedEpoch) {
+                connections.remove(connection);
+                connection.close();
+                return;
+            }
             connection.start();
         } catch (IOException e) {
             try {
@@ -147,6 +189,11 @@ public final class TlsTransportServer implements AutoCloseable {
             @Override
             public void onFrame(FrameConnection connection, Frame frame) {
                 handler.onFrame(connection, frame);
+            }
+
+            @Override
+            public void onIdle(FrameConnection connection) {
+                handler.onIdle(connection);
             }
 
             @Override

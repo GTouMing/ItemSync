@@ -147,6 +147,33 @@ class PairingStatusTest {
         }
     }
 
+    @Test
+    void timesOutWithinTheConfiguredBudget() throws Exception {
+        TlsIdentity serverIdentity = TlsIdentity.generate("server");
+        TlsIdentity clientIdentity = TlsIdentity.generate("client");
+
+        FrameHandler silent = new FrameHandler() {
+            @Override
+            public void onFrame(FrameConnection connection, Frame frame) {
+            }
+        };
+
+        try (TlsTransportServer server = new TlsTransportServer(
+                serverIdentity, new PairingTrustManager(), 0, silent)) {
+            server.start();
+
+            long started = System.nanoTime();
+            PairingStatusException failure = assertThrows(PairingStatusException.class,
+                    () -> PairingStatusClient.query("127.0.0.1", server.port(), clientIdentity,
+                            serverIdentity.fingerprint(), GROUP, NodeId.of("server-node"),
+                            DeviceId.of("server-device"), Duration.ofMillis(300)));
+            long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+
+            assertEquals(PairingStatusException.Reason.TIMEOUT, failure.reason());
+            assertTrue(elapsedMillis < 2000, "query took " + elapsedMillis + " ms");
+        }
+    }
+
     private static PairingStatusServer server(TlsIdentity identity,
                                               PairingTrustProvider provider) {
         return new PairingStatusServer(GROUP, NodeId.of("server-node"),

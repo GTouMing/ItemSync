@@ -32,7 +32,7 @@
 ```
 
 - 发现：JmDNS 注册 `_itemsync._tcp.local`，TXT 带 `deviceId` / `protocolVersion` / `groupId` / `certificateFingerprint` / `pairingPort`。
-- 连接：同组设备先开启成对信任，固定证书后进入 mTLS（ADR-0033）。首次开启信任是 TOFU，不再使用 6 位短码；未信任设备通过独立的配对端点查询远端信任状态（ADR-0031）。
+- 连接：同组设备先开启成对信任，固定证书后进入 mTLS（ADR-0033）。首次开启信任是 TOFU，不再使用 6 位短码；未建立连接时通过独立的配对端点查询远端信任状态（ADR-0031）。已建立的同步 TLS 连接（出站或入站）直接视为对端信任本机；撤销会关闭连接，空闲连接用 PING/PONG 检测，关闭后按 presence 重连（ADR-0034）。
 - 传播：变更方 `NOTIFY` → 接收方临时 `RECEIVE_ONLY` 拉取 → 立即反推（ADR-0021）。
 - 端口：固定监听 TCP `47800`（ADR-0011），mDNS TXT 同时发布端口号；被占用则启动失败并提示，不自动漂移。
 
@@ -249,7 +249,7 @@ CREATE TABLE resume       (blob_hash TEXT NOT NULL, peer_node_id TEXT NOT NULL, 
 
 HELLO            {protocolVersion, nodeId, certificateFingerprint}
 HELLO_ACK        {protocolVersion, nodeId, certificateFingerprint}
-PING / PONG      {nonce}
+PING / PONG      {nonce}                                      // 同步连接空闲检测（ADR-0034）
 BLOB_GET         {hash, offset}
 BLOB_CHUNK       {offset(8) | length(4) | data | crc32(4)}   // 1 MiB
 BLOB_RESULT      {hash, ok, size, errorCode}
