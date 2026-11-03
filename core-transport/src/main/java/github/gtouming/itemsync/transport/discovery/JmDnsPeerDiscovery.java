@@ -71,11 +71,12 @@ public final class JmDnsPeerDiscovery implements PeerDiscovery {
     private boolean started;
 
     public JmDnsPeerDiscovery() throws IOException {
-        this(preferredAddress());
+        this(null);
     }
 
     public JmDnsPeerDiscovery(InetAddress address) throws IOException {
-        this.jmDns = address == null ? JmDNS.create() : JmDNS.create(address);
+        InetAddress target = address == null ? preferredAddress() : address;
+        this.jmDns = target == null ? JmDNS.create() : JmDNS.create(target);
     }
 
     private static InetAddress preferredAddress() {
