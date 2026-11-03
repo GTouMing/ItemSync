@@ -15,6 +15,7 @@ import java.net.InetAddress;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
@@ -157,7 +158,7 @@ class PeerTrustCoordinatorTest {
 
     private static PresenceTracker.Presence presence(int pairingPort) {
         DiscoveredPeer peer = new DiscoveredPeer(NodeId.of("peer-node"),
-                DeviceId.of("peer-device"), GROUP, 1, FINGERPRINT,
+                DeviceId.of("peer-device"), Set.of(GROUP), 1, FINGERPRINT,
                 List.of(InetAddress.getLoopbackAddress()), 47800, pairingPort);
         return new PresenceTracker.Presence(peer, T0);
     }

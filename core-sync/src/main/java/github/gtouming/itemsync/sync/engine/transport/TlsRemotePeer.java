@@ -63,27 +63,32 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
     }
 
     public static TlsRemotePeer connect(String host, int port, TlsIdentity identity,
-                                        String expectedServerFingerprint, NodeId remoteNodeId,
-                                        Path tempDir) throws IOException {
-        return connect(host, port, identity, expectedServerFingerprint, remoteNodeId,
+                                        String expectedServerFingerprint, GroupId groupId,
+                                        NodeId remoteNodeId, Path tempDir) throws IOException {
+        return connect(host, port, identity, expectedServerFingerprint, groupId, remoteNodeId,
                 tempDir, DEFAULT_PROGRESS_TIMEOUT, HEARTBEAT_INTERVAL);
     }
 
     public static TlsRemotePeer connect(String host, int port, TlsIdentity identity,
-                                        String expectedServerFingerprint, NodeId remoteNodeId,
-                                        Path tempDir, Duration timeout) throws IOException {
-        return connect(host, port, identity, expectedServerFingerprint, remoteNodeId,
+                                        String expectedServerFingerprint, GroupId groupId,
+                                        NodeId remoteNodeId, Path tempDir, Duration timeout)
+            throws IOException {
+        return connect(host, port, identity, expectedServerFingerprint, groupId, remoteNodeId,
                 tempDir, timeout, HEARTBEAT_INTERVAL);
     }
 
+    /**
+     * Connects with {@code groupId} as the TLS SNI server name so the remote shared sync
+     * port selects the pins of that group during the handshake (ADR-0036).
+     */
     public static TlsRemotePeer connect(String host, int port, TlsIdentity identity,
-                                        String expectedServerFingerprint, NodeId remoteNodeId,
-                                        Path tempDir, Duration timeout, Duration heartbeat)
-            throws IOException {
+                                        String expectedServerFingerprint, GroupId groupId,
+                                        NodeId remoteNodeId, Path tempDir, Duration timeout,
+                                        Duration heartbeat) throws IOException {
         TlsRemotePeer peer = new TlsRemotePeer(remoteNodeId, tempDir, timeout);
         TlsTransportClient client = TlsTransportClient.connect(
                 host, port, identity, expectedServerFingerprint,
-                new HeartbeatHandler(peer), CONNECT_TIMEOUT, heartbeat);
+                new HeartbeatHandler(peer), groupId, CONNECT_TIMEOUT, heartbeat);
         peer.bind(client);
         return peer;
     }

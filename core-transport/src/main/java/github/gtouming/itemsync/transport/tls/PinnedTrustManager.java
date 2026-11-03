@@ -58,6 +58,11 @@ public final class PinnedTrustManager implements X509TrustManager {
     }
 
     private void verify(X509Certificate[] chain) throws CertificateException {
+        verifyPinned(chain, expectedFingerprints);
+    }
+
+    static void verifyPinned(X509Certificate[] chain, Set<String> expectedFingerprints)
+            throws CertificateException {
         if (chain == null || chain.length == 0) {
             throw new CertificateException("peer presented no certificate");
         }
@@ -86,7 +91,8 @@ public final class PinnedTrustManager implements X509TrustManager {
 
         private final String actualFingerprint;
 
-        private FingerprintMismatchException(String actualFingerprint, String message) {
+        // package-private: fingerprint mismatches are also raised by GroupPinnedTrustManager
+        FingerprintMismatchException(String actualFingerprint, String message) {
             super(message);
             this.actualFingerprint = actualFingerprint;
         }

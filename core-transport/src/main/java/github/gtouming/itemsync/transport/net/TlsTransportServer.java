@@ -3,6 +3,7 @@ package github.gtouming.itemsync.transport.net;
 import github.gtouming.itemsync.domain.compat.Compat;
 
 import github.gtouming.itemsync.transport.frame.Frame;
+import github.gtouming.itemsync.transport.tls.GroupPinnedTrustManager;
 import github.gtouming.itemsync.transport.tls.PinnedTrustManager;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
@@ -50,6 +51,22 @@ public final class TlsTransportServer implements AutoCloseable {
     public TlsTransportServer(TlsIdentity identity, PinnedTrustManager trustManager,
                               int port, FrameHandler handler) throws IOException {
         this(identity, (X509TrustManager) trustManager, port, handler);
+    }
+
+    /**
+     * Serves inbound connections with per-group certificate pins selected by the
+     * handshake SNI (ADR-0036).
+     */
+    public TlsTransportServer(TlsIdentity identity, GroupPinnedTrustManager trustManager,
+                              int port, FrameHandler handler) throws IOException {
+        this(identity, (X509TrustManager) trustManager, port, handler);
+    }
+
+    public TlsTransportServer(TlsIdentity identity, GroupPinnedTrustManager trustManager,
+                              int port, FrameHandler handler,
+                              Consumer<IOException> handshakeFailure,
+                              Duration readTimeout) throws IOException {
+        this(identity, (X509TrustManager) trustManager, port, handler, handshakeFailure, readTimeout);
     }
 
     public TlsTransportServer(TlsIdentity identity, X509TrustManager trustManager,

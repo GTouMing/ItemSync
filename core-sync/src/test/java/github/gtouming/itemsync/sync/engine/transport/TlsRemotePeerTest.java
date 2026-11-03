@@ -22,6 +22,7 @@ import github.gtouming.itemsync.transport.frame.ManifestPage;
 import github.gtouming.itemsync.transport.net.FrameConnection;
 import github.gtouming.itemsync.transport.net.FrameHandler;
 import github.gtouming.itemsync.transport.net.TlsTransportServer;
+import github.gtouming.itemsync.transport.tls.GroupPinnedTrustManager;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -37,6 +38,9 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -86,7 +90,7 @@ class TlsRemotePeerTest {
                 })) {
             server.start();
             TlsRemotePeer peer = TlsRemotePeer.connect("127.0.0.1", server.port(),
-                    clientIdentity, serverIdentity.fingerprint(), NODE_A,
+                    clientIdentity, serverIdentity.fingerprint(), GROUP, NODE_A,
                     temp.resolve("transfer"));
             try {
                 assertTrue(peer.isConnected());
@@ -126,6 +130,31 @@ class TlsRemotePeerTest {
     }
 
     @Test
+    void sendsTheGroupIdAsTheSniServerName() throws Exception {
+        a.write("docs/a.txt", "hello");
+        List<ManifestEntry> manifest = a.reconcile();
+        AtomicReference<GroupId> serverSideGroup = new AtomicReference<>();
+        RemoteSyncServer delegate = new RemoteSyncServer(GROUP,
+                (groupId, since) -> new ManifestSnapshot(manifest, 0L), BlobSources.of(a.blobs));
+        FrameHandler handler = (connection, frame) -> {
+            serverSideGroup.compareAndSet(null, connection.requestedGroup().orElse(null));
+            delegate.onFrame(connection, frame);
+        };
+
+        try (TlsTransportServer server = new TlsTransportServer(
+                serverIdentity, new GroupPinnedTrustManager(
+                        Map.of(GROUP, Set.of(clientIdentity.fingerprint()))), 0, handler)) {
+            server.start();
+            try (TlsRemotePeer peer = connect(server)) {
+                peer.manifest(GROUP, 0L);
+
+                assertEquals(GROUP, serverSideGroup.get(),
+                        "the server could not read the SNI group of the sync connection");
+            }
+        }
+    }
+
+    @Test
     void manifestProgressResetsTheTimeout() throws Exception {
         a.write("a.txt", "a");
         a.write("b.txt", "b");
@@ -154,7 +183,7 @@ class TlsRemotePeerTest {
             server.start();
             try (TlsRemotePeer peer = TlsRemotePeer.connect(
                     "127.0.0.1", server.port(), clientIdentity,
-                    serverIdentity.fingerprint(), NODE_A, temp.resolve("downloads"),
+                    serverIdentity.fingerprint(), GROUP, NODE_A, temp.resolve("downloads"),
                     Duration.ofMillis(800), Duration.ZERO)) {
                 ManifestSnapshot snapshot = peer.manifest(GROUP, 0L);
 
@@ -201,7 +230,7 @@ class TlsRemotePeerTest {
 
     private TlsRemotePeer connect(TlsTransportServer server) throws IOException {
         return TlsRemotePeer.connect("127.0.0.1", server.port(), clientIdentity,
-                serverIdentity.fingerprint(), NODE_A, temp.resolve("downloads"),
+                serverIdentity.fingerprint(), GROUP, NODE_A, temp.resolve("downloads"),
                 Duration.ofSeconds(10));
     }
 

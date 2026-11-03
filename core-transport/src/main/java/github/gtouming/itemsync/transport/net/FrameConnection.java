@@ -1,10 +1,13 @@
 package github.gtouming.itemsync.transport.net;
 
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.transport.frame.Frame;
 import github.gtouming.itemsync.transport.frame.FrameCodec;
+import github.gtouming.itemsync.transport.tls.ServerNameIndication;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import javax.net.ssl.SSLPeerUnverifiedException;
+import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocket;
 import java.io.EOFException;
 import java.io.IOException;
@@ -15,6 +18,7 @@ import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.security.cert.X509Certificate;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class FrameConnection implements AutoCloseable {
@@ -39,6 +43,21 @@ public final class FrameConnection implements AutoCloseable {
 
     public String peerFingerprint() {
         return peerFingerprint;
+    }
+
+    /**
+     * Returns the group id the peer named in the TLS SNI of this connection, if any.
+     */
+    public Optional<GroupId> requestedGroup() {
+        Optional<GroupId> fromHandshake = ServerNameIndication.group(handshakeSession());
+        if (fromHandshake.isPresent()) {
+            return fromHandshake;
+        }
+        try {
+            return ServerNameIndication.group(socket.getSession());
+        } catch (RuntimeException e) {
+            return Optional.empty();
+        }
     }
 
     public void start() {
@@ -101,6 +120,14 @@ public final class FrameConnection implements AutoCloseable {
             return TlsIdentity.fingerprint(certificate);
         } catch (SSLPeerUnverifiedException e) {
             throw new IOException("peer certificate is not verified", e);
+        }
+    }
+
+    private SSLSession handshakeSession() {
+        try {
+            return socket.getHandshakeSession();
+        } catch (RuntimeException e) {
+            return null;
         }
     }
 }

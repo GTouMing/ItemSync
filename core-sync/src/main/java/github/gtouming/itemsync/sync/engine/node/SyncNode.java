@@ -38,6 +38,7 @@ import github.gtouming.itemsync.transport.net.TlsTransportServer;
 import github.gtouming.itemsync.transport.pairing.PairingStatusServer;
 import github.gtouming.itemsync.transport.pairing.PairingTrustManager;
 import github.gtouming.itemsync.transport.pairing.PairingTrustProvider;
+import github.gtouming.itemsync.transport.tls.GroupPinnedTrustManager;
 import github.gtouming.itemsync.transport.tls.PinnedTrustManager;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
@@ -76,7 +77,7 @@ public final class SyncNode implements AutoCloseable {
     private final TlsTransportServer server;
     private final TlsTransportServer pairingServer;
     private final int pairingPort;
-    private final PinnedTrustManager trustManager;
+    private final GroupPinnedTrustManager trustManager;
     private final PresenceTracker presence;
     private final JmDnsPeerDiscovery discovery;
     private final boolean discoveryAvailable;
@@ -152,7 +153,8 @@ public final class SyncNode implements AutoCloseable {
                 BlobSources.of(blobs));
         reconciler.reconcile();
         refreshManifestCache();
-        PinnedTrustManager trustManager = new PinnedTrustManager(expectedClientFingerprints);
+        GroupPinnedTrustManager trustManager = new GroupPinnedTrustManager(
+                Compat.map(groupId, expectedClientFingerprints));
         this.trustManager = trustManager;
         this.server = new TlsTransportServer(identity, trustManager, port,
                 new HeartbeatHandler(this::onInboundFrame), this::onInboundHandshakeFailure,
@@ -189,7 +191,7 @@ public final class SyncNode implements AutoCloseable {
             peerDiscovery = new JmDnsPeerDiscovery(discoveryAddress);
             peerDiscovery.addListener(presenceTracker);
             peerDiscovery.start();
-            peerDiscovery.advertise(new PeerAdvertisement(nodeId, deviceId, groupId,
+            peerDiscovery.advertise(new PeerAdvertisement(nodeId, deviceId, Compat.set(groupId),
                     FrameCodec.PROTOCOL_VERSION, identity.fingerprint(), server.port(),
                     pairingPort));
             discoveryReady = true;
@@ -219,7 +221,7 @@ public final class SyncNode implements AutoCloseable {
     }
 
     public void allowClient(String fingerprint) {
-        trustManager.allow(fingerprint);
+        trustManager.allow(groupId, fingerprint);
         if (lastRejectedFingerprint != null
                 && lastRejectedFingerprint.equalsIgnoreCase(fingerprint)) {
             lastRejectedFingerprint = null;
@@ -228,7 +230,7 @@ public final class SyncNode implements AutoCloseable {
     }
 
     public void revokeClient(String fingerprint) {
-        trustManager.revoke(fingerprint);
+        trustManager.revoke(groupId, fingerprint);
         server.closeConnections();
     }
 
@@ -268,7 +270,7 @@ public final class SyncNode implements AutoCloseable {
     public void addPeer(NodeId peerNodeId, String host, int port,
                         String expectedServerFingerprint) throws IOException {
         TlsRemotePeer remote = TlsRemotePeer.connect(host, port, identity,
-                expectedServerFingerprint, peerNodeId, transferTempDir);
+                expectedServerFingerprint, groupId, peerNodeId, transferTempDir);
         PeerLink link = new PeerLink(peerNodeId, remote, expectedServerFingerprint);
         PeerLink previous = peers.put(peerNodeId, link);
         peersByFingerprint.put(expectedServerFingerprint, link);

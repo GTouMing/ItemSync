@@ -23,6 +23,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -146,7 +147,7 @@ class SyncNodeTest {
         assertThrows(IOException.class, () -> TlsTransportClient.connect(
                 "127.0.0.1", a.port(), other, identityA.fingerprint(),
                 (connection, frame) -> {
-                }));
+                }, GROUP));
 
         await(() -> a.lastError() != null, "A records the inbound mismatch");
         PinnedTrustManager.FingerprintMismatchException mismatch =
@@ -157,6 +158,27 @@ class SyncNodeTest {
         a.allowClient(other.fingerprint());
 
         assertNull(a.lastError());
+    }
+
+    @Test
+    void rejectsInboundConnectionsThatNameAnotherGroup() throws Exception {
+        TlsIdentity other = TlsIdentity.generate("other");
+        TlsTransportClient client = null;
+        try {
+            client = TlsTransportClient.connect("127.0.0.1", a.port(), other,
+                    identityA.fingerprint(), (connection, frame) -> {
+                    }, GroupId.parse("group002"));
+        } catch (IOException expected) {
+            // the server refused the handshake; TLS 1.3 may also report it right after connect
+        } finally {
+            if (client != null) {
+                client.close();
+            }
+        }
+
+        // the sync server only routes its own group, so it never registers this connection
+        Thread.sleep(300);
+        assertFalse(a.hasInboundConnection(other.fingerprint()));
     }
 
     @Test
