@@ -1,8 +1,8 @@
 package github.gtouming.itemsync.sync.engine;
 
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.model.ManifestEntry;
 import github.gtouming.itemsync.store.metadata.MetadataStore;
 import github.gtouming.itemsync.sync.apply.LocalApplier;
@@ -44,12 +44,12 @@ public final class SyncEngine {
             local.put(entry.path(), entry);
         }
 
-        SyncRootId rootId = reconciler.rootId();
-        long since = cursors.pullSequence(rootId, remote.nodeId());
-        ManifestSnapshot snapshot = remote.manifest(rootId, since);
+        GroupId groupId = reconciler.groupId();
+        long since = cursors.pullSequence(groupId, remote.nodeId());
+        ManifestSnapshot snapshot = remote.manifest(groupId, since);
         boolean partial = since > 0 && snapshot.sequence() >= since;
         if (since > 0 && snapshot.sequence() < since) {
-            snapshot = remote.manifest(rootId, 0);
+            snapshot = remote.manifest(groupId, 0);
             partial = false;
         }
 
@@ -77,7 +77,7 @@ public final class SyncEngine {
             }
         }
 
-        cursors.updatePull(rootId, remote.nodeId(), snapshot.sequence());
+        cursors.updatePull(groupId, remote.nodeId(), snapshot.sequence());
         return new SyncRunResult(pulled, deleted, conflicts, pendingPush);
     }
 
@@ -86,21 +86,21 @@ public final class SyncEngine {
         private static final NoopCursorRepository INSTANCE = new NoopCursorRepository();
 
         @Override
-        public long pullSequence(SyncRootId rootId, NodeId peerNodeId) {
+        public long pullSequence(GroupId groupId, NodeId peerNodeId) {
             return 0L;
         }
 
         @Override
-        public void updatePull(SyncRootId rootId, NodeId peerNodeId, long sequence) {
+        public void updatePull(GroupId groupId, NodeId peerNodeId, long sequence) {
         }
 
         @Override
-        public long pushSequence(SyncRootId rootId, NodeId peerNodeId) {
+        public long pushSequence(GroupId groupId, NodeId peerNodeId) {
             return 0L;
         }
 
         @Override
-        public void updatePush(SyncRootId rootId, NodeId peerNodeId, long sequence) {
+        public void updatePush(GroupId groupId, NodeId peerNodeId, long sequence) {
         }
     }
 }

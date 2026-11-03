@@ -1,5 +1,6 @@
 package github.gtouming.itemsync.transport.pairing;
 
+import github.gtouming.itemsync.domain.compat.Compat;
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
@@ -12,23 +13,42 @@ import github.gtouming.itemsync.transport.net.FrameConnection;
 import github.gtouming.itemsync.transport.net.FrameHandler;
 
 import java.io.IOException;
+import java.util.Map;
 import java.util.Objects;
 
+/**
+ * Answers {@code PAIRING_STATUS} requests for every group this node enables on its one
+ * shared pairing endpoint (ADR-0036): the request names the group and the answer reports
+ * that group's view of the caller. Requests for a group this node does not serve are not
+ * answered at all, because any response would state another group's trust.
+ */
 public final class PairingStatusServer implements FrameHandler {
 
-    private final GroupId groupId;
+    private final Map<GroupId, PairingTrustProvider> trustByGroup;
     private final NodeId nodeId;
     private final DeviceId deviceId;
     private final String fingerprint;
-    private final PairingTrustProvider trust;
 
+    /**
+     * Serves a single group; kept for the single-group runtime and its callers.
+     */
     public PairingStatusServer(GroupId groupId, NodeId nodeId, DeviceId deviceId,
                                String fingerprint, PairingTrustProvider trust) {
-        this.groupId = Objects.requireNonNull(groupId, "groupId");
+        this(Compat.map(Objects.requireNonNull(groupId, "groupId"),
+                Objects.requireNonNull(trust, "trust")), nodeId, deviceId, fingerprint);
+    }
+
+    public PairingStatusServer(Map<GroupId, PairingTrustProvider> trustByGroup, NodeId nodeId,
+                               DeviceId deviceId, String fingerprint) {
+        Objects.requireNonNull(trustByGroup, "trustByGroup");
+        if (trustByGroup.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "a pairing status server must serve at least one group");
+        }
+        this.trustByGroup = Compat.copyMap(trustByGroup);
         this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
         this.deviceId = Objects.requireNonNull(deviceId, "deviceId");
         this.fingerprint = Objects.requireNonNull(fingerprint, "fingerprint");
-        this.trust = Objects.requireNonNull(trust, "trust");
     }
 
     @Override
@@ -39,11 +59,13 @@ public final class PairingStatusServer implements FrameHandler {
         }
         try {
             PairingStatusRequest request = FramePayloads.decodePairingStatusRequest(frame.payload());
-            if (!groupId.equals(request.groupId())) {
+            PairingTrustProvider trust = trustByGroup.get(request.groupId());
+            if (trust == null) {
                 return;
             }
-            PairingStatusResponse response = new PairingStatusResponse(groupId, nodeId, deviceId,
-                    fingerprint, trust.trusts(groupId, connection.peerFingerprint()));
+            boolean trusts = trust.trusts(request.groupId(), connection.peerFingerprint());
+            PairingStatusResponse response = new PairingStatusResponse(request.groupId(), nodeId,
+                    deviceId, fingerprint, trusts);
             connection.send(new Frame(FrameType.PAIRING_STATUS_ACK,
                     FramePayloads.encodePairingStatusResponse(response)));
         } catch (RuntimeException ignored) {

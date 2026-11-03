@@ -5,7 +5,6 @@ import github.gtouming.itemsync.domain.compat.Compat;
 import github.gtouming.itemsync.domain.error.ErrorCode;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.identity.SyncRunId;
 import github.gtouming.itemsync.domain.identity.TriggerId;
 import github.gtouming.itemsync.domain.model.SyncRun;
@@ -44,7 +43,6 @@ public final class TriggerEngine implements AutoCloseable {
 
     private final MetadataStore store;
     private final GroupId groupId;
-    private final SyncRootId rootId;
     private final NodeId nodeId;
     private final SyncRunner runner;
     private final ExclusiveRunner exclusive;
@@ -63,12 +61,11 @@ public final class TriggerEngine implements AutoCloseable {
     private volatile Instant suppressUntil = Instant.EPOCH;
     private volatile IOException lastError;
 
-    public TriggerEngine(MetadataStore store, GroupId groupId, SyncRootId rootId, NodeId nodeId,
+    public TriggerEngine(MetadataStore store, GroupId groupId, NodeId nodeId,
                          SyncRunner runner, ExclusiveRunner exclusive,
                          Supplier<Instant> clock, Duration debounce) {
         this.store = Objects.requireNonNull(store, "store");
         this.groupId = Objects.requireNonNull(groupId, "groupId");
-        this.rootId = Objects.requireNonNull(rootId, "rootId");
         this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
         this.runner = Objects.requireNonNull(runner, "runner");
         this.exclusive = Objects.requireNonNull(exclusive, "exclusive");
@@ -154,14 +151,14 @@ public final class TriggerEngine implements AutoCloseable {
             exclusive.run(() -> {
                 SyncRunId runId = new SyncRunId(UUID.randomUUID().toString());
                 Instant started = clock.get();
-                store.runs().insert(new SyncRun(runId, groupId, rootId, id, nodeId,
+                store.runs().insert(new SyncRun(runId, groupId, id, nodeId,
                         SyncRunState.SCANNING, started, null, null, null));
                 try {
                     List<SyncRunResult> results = runner.run();
-                    store.runs().update(new SyncRun(runId, groupId, rootId, id, nodeId,
+                    store.runs().update(new SyncRun(runId, groupId, id, nodeId,
                             SyncRunState.COMPLETED, started, clock.get(), stats(results), null));
                 } catch (IOException | RuntimeException failure) {
-                    store.runs().update(new SyncRun(runId, groupId, rootId, id, nodeId,
+                    store.runs().update(new SyncRun(runId, groupId, id, nodeId,
                             SyncRunState.FAILED, started, clock.get(), null,
                             ErrorCode.SYNC_RUN_FAILED));
                 }

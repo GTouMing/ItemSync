@@ -2,6 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-11-02
+- 修订：[ADR-0035](0035-multi-group-single-root.md) 组升级为持久化实体；组 ID 仍为发现命名空间，但不可变并作为唯一根键。
 - 替代：[ADR-0024](0024-open-join-group-id-consent.md)；修订 [ADR-0021](0021-sync-group-version-vectors.md) 的组与成员部分。
 
 ## 背景

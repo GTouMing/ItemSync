@@ -3,10 +3,10 @@ package github.gtouming.itemsync.sync.state;
 import github.gtouming.itemsync.domain.compat.Compat;
 
 import github.gtouming.itemsync.domain.identity.BlobHash;
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.ItemId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.identity.VersionId;
 import github.gtouming.itemsync.domain.model.FileVersion;
 import github.gtouming.itemsync.domain.model.Item;
@@ -37,26 +37,26 @@ public final class VersionHistoryService {
     private final MetadataStore store;
     private final BlobStore blobs;
     private final PhysicalPathResolver paths;
-    private final SyncRootId rootId;
+    private final GroupId groupId;
     private final NodeId localNode;
     private final Supplier<Instant> clock;
     private final LocalStateWriter writer;
 
     public VersionHistoryService(Path syncRoot, MetadataStore store, BlobStore blobs,
-                                 PhysicalPathResolver paths, SyncRootId rootId, NodeId localNode,
+                                 PhysicalPathResolver paths, GroupId groupId, NodeId localNode,
                                  Supplier<Instant> clock) {
         this.syncRoot = Objects.requireNonNull(syncRoot, "syncRoot");
         this.store = Objects.requireNonNull(store, "store");
         this.blobs = Objects.requireNonNull(blobs, "blobs");
         this.paths = Objects.requireNonNull(paths, "paths");
-        this.rootId = Objects.requireNonNull(rootId, "rootId");
+        this.groupId = Objects.requireNonNull(groupId, "groupId");
         this.localNode = Objects.requireNonNull(localNode, "localNode");
         this.clock = Objects.requireNonNull(clock, "clock");
-        this.writer = new LocalStateWriter(store, rootId, clock);
+        this.writer = new LocalStateWriter(store, groupId, clock);
     }
 
     public List<ItemView> items(int limit) {
-        return store.items().page(rootId, null, limit).items().stream()
+        return store.items().page(groupId, null, limit).items().stream()
                 .filter(item -> item.kind() == ItemKind.FILE)
                 .map(item -> new ItemView(item.id(), item.logicalPath()))
                 .collect(java.util.stream.Collectors.toList());

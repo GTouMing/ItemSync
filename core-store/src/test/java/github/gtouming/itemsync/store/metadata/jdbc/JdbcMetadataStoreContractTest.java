@@ -2,6 +2,7 @@ package github.gtouming.itemsync.store.metadata.jdbc;
 
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.model.SyncGroup;
+import github.gtouming.itemsync.domain.model.SyncRoot;
 import github.gtouming.itemsync.store.metadata.MetadataStore;
 import github.gtouming.itemsync.store.metadata.MetadataStoreContract;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,8 @@ class JdbcMetadataStoreContractTest extends MetadataStoreContract {
         GroupId groupId = GroupId.parse("group009");
 
         try (MetadataStore first = openStore()) {
-            first.groups().insert(new SyncGroup(groupId, "Home", 7, T0));
+            first.groups().insert(new SyncGroup(groupId, "Home",
+                    new SyncRoot("C:\\Docs", "Docs", null), 7, T0));
         }
 
         try (MetadataStore second = openStore()) {

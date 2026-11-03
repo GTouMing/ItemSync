@@ -63,10 +63,6 @@ public final class AndroidSyncConfig {
         return value;
     }
 
-    public String rootId() {
-        return prefs.getString("root-id", "root-1");
-    }
-
     public int port() {
         return prefs.getInt("port", 47800);
     }
@@ -120,6 +116,7 @@ public final class AndroidSyncConfig {
         SharedPreferences.Editor editor = prefs.edit();
         editor.putString("root", root.trim());
         editor.putString("group", group.trim());
+        editor.remove("root-id");
         editor.remove("peers");
         editor.remove("expect");
         editor.putInt("port", port);

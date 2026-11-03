@@ -4,6 +4,7 @@
 - 日期：2026-11-01
 - 修订：组与信任模型由 [ADR-0029](0029-group-id-namespace.md)、[ADR-0030](0030-pairwise-trust-and-presence.md) 修订；项级版本向量与传播模型继续有效。
 - 修订：[ADR-0004](0004-bidirectional-sync-with-conflict-copies.md) 的并发判定与传播模型
+- 修订：[ADR-0035](0035-multi-group-single-root.md) 的 run 作用域与组键（一组一根，组 ID 取代 root ID）
 
 ## 背景
 

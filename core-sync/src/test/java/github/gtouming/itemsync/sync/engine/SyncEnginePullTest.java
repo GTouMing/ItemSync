@@ -1,10 +1,10 @@
 package github.gtouming.itemsync.sync.engine;
 
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.BlobHash;
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.model.Item;
 import github.gtouming.itemsync.domain.model.ManifestEntry;
 import github.gtouming.itemsync.domain.replication.VersionVector;
@@ -43,7 +43,7 @@ class SyncEnginePullTest {
     private static final NodeId NODE_B = NodeId.of("node-b");
     private static final DeviceId DEVICE_A = DeviceId.of("device-a");
     private static final DeviceId DEVICE_B = DeviceId.of("device-b");
-    private static final SyncRootId ROOT = SyncRootId.of("root-1");
+    private static final GroupId GROUP = GroupId.parse("group001");
 
     @TempDir
     Path temp;
@@ -75,7 +75,7 @@ class SyncEnginePullTest {
         assertEquals(0, result.conflicts());
         assertEquals(0, result.pendingPush());
         assertEquals("hello", b.read("docs/a.txt"));
-        Item item = b.store.items().find(ROOT, LogicalPath.of("docs/a.txt")).orElseThrow();
+        Item item = b.store.items().find(GROUP, LogicalPath.of("docs/a.txt")).orElseThrow();
         assertEquals(versionOf(manifestA, "docs/a.txt"), item.vector());
     }
 
@@ -89,7 +89,7 @@ class SyncEnginePullTest {
 
         assertEquals(1, result.pulled());
         assertEquals("two", b.read("a.txt"));
-        Item item = b.store.items().find(ROOT, LogicalPath.of("a.txt")).orElseThrow();
+        Item item = b.store.items().find(GROUP, LogicalPath.of("a.txt")).orElseThrow();
         assertEquals(VersionVector.of(java.util.Map.of(NODE_A, 2L)), item.vector());
     }
 
@@ -103,7 +103,7 @@ class SyncEnginePullTest {
 
         assertEquals(1, result.deleted());
         assertFalse(b.exists("a.txt"));
-        Item item = b.store.items().find(ROOT, LogicalPath.of("a.txt")).orElseThrow();
+        Item item = b.store.items().find(GROUP, LogicalPath.of("a.txt")).orElseThrow();
         assertNotNull(item.deletedAt());
         assertTrue(b.store.tombstones().find(item.id()).isPresent());
     }
@@ -163,7 +163,7 @@ class SyncEnginePullTest {
             }
 
             @Override
-            public ManifestSnapshot manifest(SyncRootId rootId, long sinceSequence) {
+            public ManifestSnapshot manifest(GroupId groupId, long sinceSequence) {
                 requestedSince.set(sinceSequence);
                 return new ManifestSnapshot(remote.get(), sinceSequence == 0 ? 42L : 43L);
             }
@@ -176,16 +176,16 @@ class SyncEnginePullTest {
 
         assertEquals(1, b.cursoredEngine.pullOnce(peer).pendingPush());
         assertEquals(0L, requestedSince.get());
-        assertEquals(42L, b.store.cursors().pullSequence(ROOT, NODE_A));
+        assertEquals(42L, b.store.cursors().pullSequence(GROUP, NODE_A));
 
         assertEquals(0, b.cursoredEngine.pullOnce(peer).pendingPush());
         assertEquals(42L, requestedSince.get());
-        assertEquals(43L, b.store.cursors().pullSequence(ROOT, NODE_A));
+        assertEquals(43L, b.store.cursors().pullSequence(GROUP, NODE_A));
     }
 
     @Test
     void retriesFullManifestWhenServerSequenceIsBehindTheCursor() throws Exception {
-        b.store.cursors().updatePull(ROOT, NODE_A, 42L);
+        b.store.cursors().updatePull(GROUP, NODE_A, 42L);
         List<Long> requested = new java.util.ArrayList<>();
         RemotePeer peer = new RemotePeer() {
             @Override
@@ -194,7 +194,7 @@ class SyncEnginePullTest {
             }
 
             @Override
-            public ManifestSnapshot manifest(SyncRootId rootId, long sinceSequence) {
+            public ManifestSnapshot manifest(GroupId groupId, long sinceSequence) {
                 requested.add(sinceSequence);
                 return new ManifestSnapshot(List.of(), 10L);
             }
@@ -208,7 +208,7 @@ class SyncEnginePullTest {
         b.cursoredEngine.pullOnce(peer);
 
         assertEquals(List.of(42L, 0L), requested);
-        assertEquals(10L, b.store.cursors().pullSequence(ROOT, NODE_A));
+        assertEquals(10L, b.store.cursors().pullSequence(GROUP, NODE_A));
     }
 
     private static final class NodeFixture implements AutoCloseable {
@@ -229,9 +229,9 @@ class SyncEnginePullTest {
             Files.createDirectories(root);
             this.blobs = new FileSystemBlobStore(base.resolve("data"));
             this.store = JdbcMetadataStore.open("jdbc:sqlite:" + base.resolve("meta.db").toAbsolutePath());
-            this.reconciler = new LocalReconciler(root, store, blobs, ROOT, nodeId,
+            this.reconciler = new LocalReconciler(root, store, blobs, GROUP, nodeId,
                     PathResolvers.posix(), () -> T0);
-            this.applier = new LocalApplier(root, store, blobs, PathResolvers.posix(), ROOT,
+            this.applier = new LocalApplier(root, store, blobs, PathResolvers.posix(), GROUP,
                     nodeId, deviceId, () -> T0);
             this.engine = new SyncEngine(reconciler, applier, new SyncPlanner());
             this.cursoredEngine = new SyncEngine(reconciler, applier, new SyncPlanner(),
@@ -276,7 +276,7 @@ class SyncEnginePullTest {
                 }
 
                 @Override
-                public ManifestSnapshot manifest(SyncRootId rootId, long sinceSequence) {
+                public ManifestSnapshot manifest(GroupId groupId, long sinceSequence) {
                     return new ManifestSnapshot(manifest, 0L);
                 }
 

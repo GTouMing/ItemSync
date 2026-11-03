@@ -4,7 +4,6 @@ import github.gtouming.itemsync.domain.identity.BlobHash;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.identity.SyncRunId;
 import github.gtouming.itemsync.domain.model.ItemKind;
 import github.gtouming.itemsync.domain.model.ManifestEntry;
@@ -24,12 +23,11 @@ class ManifestFramePayloadsTest {
     private static final BlobHash HASH = BlobHash.parse("a".repeat(64));
     private static final NodeId NODE_A = NodeId.of("node-a");
     private static final GroupId GROUP = GroupId.parse("group001");
-    private static final SyncRootId ROOT = SyncRootId.of("root-1");
     private static final SyncRunId RUN = SyncRunId.of("run-1");
 
     @Test
     void roundTripsNotify() {
-        Notify notify = new Notify(RUN, GROUP, LogicalClock.of(5), ROOT,
+        Notify notify = new Notify(RUN, GROUP, LogicalClock.of(5),
                 VersionVector.of(Map.of(NODE_A, 2L)));
 
         assertEquals(notify, FramePayloads.decodeNotify(FramePayloads.encodeNotify(notify)));
@@ -44,9 +42,9 @@ class ManifestFramePayloadsTest {
 
     @Test
     void roundTripsManifestRequest() {
-        ManifestRequest withHash = new ManifestRequest(ROOT, VersionVector.of(Map.of(NODE_A, 1L)),
+        ManifestRequest withHash = new ManifestRequest(GROUP, VersionVector.of(Map.of(NODE_A, 1L)),
                 17L, "ignore-hash");
-        ManifestRequest withoutHash = new ManifestRequest(ROOT, VersionVector.empty(), null);
+        ManifestRequest withoutHash = new ManifestRequest(GROUP, VersionVector.empty(), null);
 
         assertEquals(withHash, FramePayloads.decodeManifestRequest(FramePayloads.encodeManifestRequest(withHash)));
         assertEquals(withoutHash,
@@ -56,7 +54,7 @@ class ManifestFramePayloadsTest {
     @Test
     void defaultsMissingManifestSequenceFieldsToZero() {
         ManifestRequest request = FramePayloads.decodeManifestRequest(
-                "{\"rootId\":\"root-1\",\"since\":{}}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                "{\"groupId\":\"group001\",\"since\":{}}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         ManifestEnd end = FramePayloads.decodeManifestEnd(
                 "{\"totalEntries\":3}".getBytes(java.nio.charset.StandardCharsets.UTF_8));
 

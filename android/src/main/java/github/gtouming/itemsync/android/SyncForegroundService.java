@@ -17,7 +17,6 @@ import github.gtouming.itemsync.domain.compat.Compat;
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.sync.apply.PathResolvers;
 import github.gtouming.itemsync.sync.engine.SyncRunResult;
@@ -28,9 +27,15 @@ import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
+import java.util.Enumeration;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -56,6 +61,20 @@ public final class SyncForegroundService extends Service {
     private WifiManager.MulticastLock multicastLock;
     private ScheduledFuture<?> debounce;
     private volatile boolean started;
+    private volatile int lastOnlineCount = -1;
+    private volatile String lastTrustWarning;
+
+    public static boolean isRunning() {
+        return running;
+    }
+
+    private static volatile boolean running;
+    private static volatile SyncForegroundService instance;
+
+    // Used only by the debug-only admin provider.
+    static SyncForegroundService instance() {
+        return instance;
+    }
 
     public final class LocalBinder extends Binder {
         public SyncForegroundService service() {
@@ -66,6 +85,7 @@ public final class SyncForegroundService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        instance = this;
         NotificationManager manager = getSystemService(NotificationManager.class);
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID, "ItemSync 同步", NotificationManager.IMPORTANCE_LOW);
@@ -74,6 +94,7 @@ public final class SyncForegroundService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        running = true;
         startForeground(NOTIFICATION_ID, notification("正在启动"),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
         if (!started) {
@@ -93,8 +114,12 @@ public final class SyncForegroundService extends Service {
     }
 
     public List<PeerTrustCoordinator.PeerView> peerViews() {
+        return peerViews(true);
+    }
+
+    public List<PeerTrustCoordinator.PeerView> peerViews(boolean forceRefresh) {
         PeerTrustCoordinator current = peerTrust;
-        return current == null ? Compat.list() : current.peerViews();
+        return current == null ? Compat.list() : current.peerViews(forceRefresh);
     }
 
     public void trustPeer(DiscoveredPeer peer) throws IOException {
@@ -111,14 +136,6 @@ public final class SyncForegroundService extends Service {
             throw new IllegalStateException("同步服务尚未启动");
         }
         current.untrustPeer(peer);
-    }
-
-    public String pairingCode(DiscoveredPeer peer) {
-        PeerTrustCoordinator current = peerTrust;
-        if (current == null) {
-            throw new IllegalStateException("同步服务尚未启动");
-        }
-        return current.pairingCode(peer);
     }
 
     public void requestSync() {
@@ -153,11 +170,12 @@ public final class SyncForegroundService extends Service {
             trustStore.retainOnly(group);
 
             store = new AndroidSqliteMetadataStore(this, "itemsync.sqlite");
-            node = new SyncNode(nodeId, group, SyncRootId.of(config.rootId()), root, store,
+            InetAddress discoveryAddress = preferredDiscoveryAddress();
+            node = new SyncNode(nodeId, group, root, store,
                     new FileSystemBlobStore(new File(getFilesDir(), "data").toPath()),
                     PathResolvers.posix(), identity, deviceId, Compat.set("none"),
                     config.port(), new File(getCacheDir(), "transfer").toPath(),
-                    trustStore::isTrusted);
+                    trustStore::isTrusted, discoveryAddress);
             peerTrust = new PeerTrustCoordinator(group, identity, node, trustStore);
             peerTrust.reconcileTrustedPeers();
 
@@ -168,7 +186,13 @@ public final class SyncForegroundService extends Service {
             if (interval > 0) {
                 scheduler.scheduleWithFixedDelay(this::sync, interval, interval, TimeUnit.SECONDS);
             }
-            updateNotification("已启动");
+            if (node.discoveryAvailable()) {
+                Log.i(TAG, "mDNS discovery started");
+                updateNotification("已启动");
+            } else {
+                Log.e(TAG, "mDNS discovery unavailable", node.discoveryError());
+                updateNotification("已启动（局域网发现不可用，请查看日志）");
+            }
             sync();
         } catch (Exception e) {
             Log.e(TAG, "start failed", e);
@@ -185,6 +209,17 @@ public final class SyncForegroundService extends Service {
         try {
             current.reconcileTrustedPeers();
             current.refreshRemoteTrust();
+            int online = current.onlinePeers().size();
+            if (online != lastOnlineCount) {
+                lastOnlineCount = online;
+                Log.i(TAG, "online peers: " + online);
+            }
+            String warning = current.lastWarning();
+            if (warning != null && !warning.equals(lastTrustWarning)) {
+                lastTrustWarning = warning;
+                Log.w(TAG, warning);
+                updateNotification(warning);
+            }
         } catch (RuntimeException e) {
             Log.w(TAG, "peer reconcile failed", e);
         }
@@ -199,6 +234,40 @@ public final class SyncForegroundService extends Service {
         multicastLock = wifi.createMulticastLock("itemsync-mdns");
         multicastLock.setReferenceCounted(false);
         multicastLock.acquire();
+    }
+
+    private InetAddress preferredDiscoveryAddress() {
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            if (interfaces == null) {
+                return null;
+            }
+            InetAddress fallback = null;
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface network = interfaces.nextElement();
+                if (!network.isUp() || network.isLoopback() || network.isVirtual()) {
+                    continue;
+                }
+                for (InetAddress address : Collections.list(network.getInetAddresses())) {
+                    if (!(address instanceof Inet4Address)
+                            || address.isLoopbackAddress()
+                            || address.isLinkLocalAddress()) {
+                        continue;
+                    }
+                    String name = network.getName().toLowerCase(Locale.ROOT);
+                    if (name.startsWith("wlan") || name.startsWith("wifi")) {
+                        return address;
+                    }
+                    if (fallback == null) {
+                        fallback = address;
+                    }
+                }
+            }
+            return fallback;
+        } catch (Exception e) {
+            Log.w(TAG, "cannot select discovery address", e);
+            return null;
+        }
     }
 
     private void releaseMulticastLock() {
@@ -323,7 +392,11 @@ public final class SyncForegroundService extends Service {
 
     @Override
     public void onDestroy() {
+        if (instance == this) {
+            instance = null;
+        }
         started = false;
+        running = false;
         closeNode();
         scheduler.shutdownNow();
         executor.shutdownNow();

@@ -8,13 +8,12 @@ import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.ItemId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.identity.SyncRunId;
 import github.gtouming.itemsync.domain.identity.TriggerId;
 import github.gtouming.itemsync.domain.identity.VersionId;
 import github.gtouming.itemsync.domain.model.Conflict;
 import github.gtouming.itemsync.domain.model.FileVersion;
-import github.gtouming.itemsync.domain.model.GroupMember;
+import github.gtouming.itemsync.domain.model.GroupDevice;
 import github.gtouming.itemsync.domain.model.Item;
 import github.gtouming.itemsync.domain.model.ItemKind;
 import github.gtouming.itemsync.domain.model.Peer;
@@ -48,7 +47,8 @@ public final class MetadataStoreConformance {
     private static final GroupId OTHER_GROUP = GroupId.parse("group002");
     private static final NodeId NODE_A = NodeId.of("node-a");
     private static final NodeId NODE_B = NodeId.of("node-b");
-    private static final SyncRootId ROOT = SyncRootId.of("root-1");
+    private static final DeviceId DEVICE_A = DeviceId.of("device-a");
+    private static final DeviceId DEVICE_B = DeviceId.of("device-b");
     private static final ItemId ITEM = ItemId.of("item-1");
     private static final LogicalPath PATH = LogicalPath.of("docs/a.txt");
     private static final BlobHash BLOB = BlobHash.parse("a".repeat(64));
@@ -87,7 +87,7 @@ public final class MetadataStoreConformance {
     }
 
     public void storesGroupAndUpdatesLogicalClock() {
-        SyncGroup group = new SyncGroup(GROUP, "Home", 0, T0);
+        SyncGroup group = new SyncGroup(GROUP, "Home", root("C:\\Docs"), 0, T0);
 
         store.groups().insert(group);
 
@@ -98,39 +98,40 @@ public final class MetadataStoreConformance {
         assertEquals(42, store.groups().find(GROUP).orElseThrow().logicalClock());
     }
 
-    public void managesGroupMembers() {
-        GroupMember first = new GroupMember(GROUP, NODE_A, "Alpha", false, false, T0);
-        GroupMember second = new GroupMember(GROUP, NODE_B, "Beta", true, false, T0);
+    public void managesGroupDevices() {
+        GroupDevice first = new GroupDevice(GROUP, DEVICE_A, "Alpha", "fingerprint-1", T0, T0);
+        GroupDevice second = new GroupDevice(GROUP, DEVICE_B, "Beta", "fingerprint-2",
+                T0.plusSeconds(30), T0.plusSeconds(5));
 
-        store.groups().upsertMember(first);
-        store.groups().upsertMember(second);
+        store.devices().upsert(first);
+        store.devices().upsert(second);
 
-        assertEquals(Optional.of(first), store.groups().findMember(GROUP, NODE_A));
-        assertEquals(List.of(first, second), store.groups().members(GROUP));
+        assertEquals(Optional.of(first), store.devices().find(GROUP, DEVICE_A));
+        assertEquals(List.of(first, second), store.devices().findByGroup(GROUP));
+        assertTrue(store.devices().find(OTHER_GROUP, DEVICE_A).isEmpty());
 
-        store.groups().deleteMember(GROUP, NODE_A);
+        store.devices().delete(GROUP, DEVICE_A);
 
-        assertEquals(List.of(second), store.groups().members(GROUP));
+        assertEquals(List.of(second), store.devices().findByGroup(GROUP));
     }
 
-    public void storesRootsPerGroup() {
-        SyncRoot first = new SyncRoot(ROOT, GROUP, "C:\\Docs", "Docs", null, T0);
-        SyncRoot second = new SyncRoot(SyncRootId.of("root-2"), GROUP, "C:\\Photos", "Photos", "*.tmp", T0);
-        SyncRoot other = new SyncRoot(SyncRootId.of("root-3"), OTHER_GROUP, "D:\\Other", "Other", null, T0);
+    public void storesGroupRootAndListsGroups() {
+        SyncGroup first = new SyncGroup(GROUP, "Home", root("C:\\Docs"), 0, T0);
+        SyncGroup second = new SyncGroup(OTHER_GROUP, "Other",
+                new SyncRoot("D:\\Other", "Other", "*.tmp"), 3, T0.plusSeconds(60));
 
-        store.roots().insert(first);
-        store.roots().insert(second);
-        store.roots().insert(other);
+        store.groups().insert(second);
+        store.groups().insert(first);
 
-        assertEquals(Optional.of(first), store.roots().find(ROOT));
-        assertEquals(List.of(first, second), store.roots().findByGroup(GROUP));
-        assertEquals(List.of(other), store.roots().findByGroup(OTHER_GROUP));
+        assertEquals(Optional.of(first), store.groups().find(GROUP));
+        assertEquals(List.of(first, second), store.groups().findAll());
+        assertEquals(new SyncRoot("D:\\Other", "Other", "*.tmp"),
+                store.groups().find(OTHER_GROUP).orElseThrow().root());
 
-        store.roots().updateIgnoreSnapshot(ROOT, "*.log");
-        assertEquals("*.log", store.roots().find(ROOT).orElseThrow().ignoreSnapshot());
+        store.groups().delete(OTHER_GROUP);
 
-        store.roots().delete(SyncRootId.of("root-2"));
-        assertEquals(1, store.roots().findByGroup(GROUP).size());
+        assertEquals(List.of(first), store.groups().findAll());
+        assertTrue(store.groups().find(OTHER_GROUP).isEmpty());
     }
 
     public void storesItemWithVector() {
@@ -138,7 +139,7 @@ public final class MetadataStoreConformance {
 
         store.items().upsert(item);
 
-        assertEquals(Optional.of(item), store.items().find(ROOT, PATH));
+        assertEquals(Optional.of(item), store.items().find(GROUP, PATH));
         assertEquals(Optional.of(item), store.items().findById(ITEM));
     }
 
@@ -148,7 +149,7 @@ public final class MetadataStoreConformance {
 
         store.items().upsert(updated);
 
-        assertEquals(Optional.of(updated), store.items().find(ROOT, PATH));
+        assertEquals(Optional.of(updated), store.items().find(GROUP, PATH));
     }
 
     public void pagesItemsAfterCursor() {
@@ -157,64 +158,81 @@ public final class MetadataStoreConformance {
                     "ver-" + i, Map.of(NODE_A, 1L), null));
         }
 
-        ItemPage first = store.items().page(ROOT, null, 2);
+        ItemPage first = store.items().page(GROUP, null, 2);
         assertEquals(List.of("f0", "f1"), paths(first));
         assertEquals("f1", first.nextCursor());
 
-        ItemPage second = store.items().page(ROOT, first.nextCursor(), 2);
+        ItemPage second = store.items().page(GROUP, first.nextCursor(), 2);
         assertEquals(List.of("f2", "f3"), paths(second));
         assertEquals("f3", second.nextCursor());
 
-        ItemPage third = store.items().page(ROOT, second.nextCursor(), 2);
+        ItemPage third = store.items().page(GROUP, second.nextCursor(), 2);
         assertEquals(List.of("f4"), paths(third));
         assertNull(third.nextCursor());
     }
 
     public void advancesItemChangeSequenceAndReturnsOnlyChangedItems() {
-        long before = store.items().currentSequence(ROOT);
+        long before = store.items().currentSequence(GROUP);
 
         store.items().upsert(item(ITEM, PATH, "ver-1", Map.of(NODE_A, 1L), null));
 
-        long first = store.items().currentSequence(ROOT);
+        long first = store.items().currentSequence(GROUP);
         assertTrue(first > before);
-        List<ItemRepository.ChangedItem> changed = store.items().changedSince(ROOT, before, first);
+        List<ItemRepository.ChangedItem> changed = store.items().changedSince(GROUP, before, first);
         assertEquals(1, changed.size());
         assertEquals(PATH, changed.get(0).item().logicalPath());
-        assertTrue(store.items().changedSince(ROOT, first, first).isEmpty());
+        assertTrue(store.items().changedSince(GROUP, first, first).isEmpty());
 
         LogicalPath next = LogicalPath.of("docs/b.txt");
         store.items().upsert(item(ItemId.of("item-2"), next, "ver-2",
                 Map.of(NODE_A, 2L), null));
 
-        long second = store.items().currentSequence(ROOT);
+        long second = store.items().currentSequence(GROUP);
         assertTrue(second > first);
-        List<ItemRepository.ChangedItem> changedAgain = store.items().changedSince(ROOT, first, second);
+        List<ItemRepository.ChangedItem> changedAgain = store.items().changedSince(GROUP, first, second);
         assertEquals(1, changedAgain.size());
         assertEquals(next, changedAgain.get(0).item().logicalPath());
 
         store.items().upsert(item(ITEM, PATH, "ver-3", Map.of(NODE_A, 3L), null));
-        long third = store.items().currentSequence(ROOT);
+        long third = store.items().currentSequence(GROUP);
         assertTrue(third > second);
-        List<ItemRepository.ChangedItem> changedSamePath = store.items().changedSince(ROOT, second, third);
+        List<ItemRepository.ChangedItem> changedSamePath = store.items().changedSince(GROUP, second, third);
         assertEquals(1, changedSamePath.size());
         assertEquals(PATH, changedSamePath.get(0).item().logicalPath());
     }
 
+    public void keepsChangeSequencesIsolatedPerGroup() {
+        store.items().upsert(item(ITEM, PATH, "ver-1", Map.of(NODE_A, 1L), null));
+        long groupSequence = store.items().currentSequence(GROUP);
+
+        Item other = new Item(ItemId.of("item-other"), OTHER_GROUP, PATH, ItemKind.FILE,
+                VersionId.of("ver-1"), VersionVector.of(Map.of(NODE_A, 1L)), null);
+        store.items().upsert(other);
+
+        long otherSequence = store.items().currentSequence(OTHER_GROUP);
+        assertEquals(groupSequence, store.items().currentSequence(GROUP));
+        assertTrue(otherSequence > groupSequence);
+        assertEquals(1, store.items().changedSince(OTHER_GROUP, groupSequence, otherSequence).size());
+        assertEquals(Optional.of(other), store.items().find(OTHER_GROUP, PATH));
+    }
+
     public void storesAndUpdatesManifestCursors() {
-        assertEquals(0L, store.cursors().pullSequence(ROOT, NODE_A));
-        assertEquals(0L, store.cursors().pushSequence(ROOT, NODE_A));
+        assertEquals(0L, store.cursors().pullSequence(GROUP, NODE_A));
+        assertEquals(0L, store.cursors().pushSequence(GROUP, NODE_A));
 
-        store.cursors().updatePull(ROOT, NODE_A, 7);
-        store.cursors().updatePush(ROOT, NODE_A, 3);
+        store.cursors().updatePull(GROUP, NODE_A, 7);
+        store.cursors().updatePush(GROUP, NODE_A, 3);
 
-        assertEquals(7L, store.cursors().pullSequence(ROOT, NODE_A));
-        assertEquals(3L, store.cursors().pushSequence(ROOT, NODE_A));
+        assertEquals(7L, store.cursors().pullSequence(GROUP, NODE_A));
+        assertEquals(3L, store.cursors().pushSequence(GROUP, NODE_A));
 
-        store.cursors().updatePull(ROOT, NODE_A, 9);
-        store.cursors().updatePush(ROOT, NODE_A, 5);
+        store.cursors().updatePull(GROUP, NODE_A, 9);
+        store.cursors().updatePush(GROUP, NODE_A, 5);
 
-        assertEquals(9L, store.cursors().pullSequence(ROOT, NODE_A));
-        assertEquals(5L, store.cursors().pushSequence(ROOT, NODE_A));
+        assertEquals(9L, store.cursors().pullSequence(GROUP, NODE_A));
+        assertEquals(5L, store.cursors().pushSequence(GROUP, NODE_A));
+
+        assertEquals(0L, store.cursors().pullSequence(OTHER_GROUP, NODE_A));
     }
 
     public void deletesItem() {
@@ -222,7 +240,7 @@ public final class MetadataStoreConformance {
 
         store.items().delete(ITEM);
 
-        assertTrue(store.items().find(ROOT, PATH).isEmpty());
+        assertTrue(store.items().find(GROUP, PATH).isEmpty());
         assertTrue(store.items().findById(ITEM).isEmpty());
     }
 
@@ -316,24 +334,25 @@ public final class MetadataStoreConformance {
     }
 
     public void storesAndUpdatesSyncRun() {
-        SyncRun run = new SyncRun(SyncRunId.of("run-1"), GROUP, ROOT, TriggerId.of("trig-1"),
+        SyncRun run = new SyncRun(SyncRunId.of("run-1"), GROUP, TriggerId.of("trig-1"),
                 NODE_A, SyncRunState.SCANNING, T0, null, null, null);
 
         store.runs().insert(run);
         assertEquals(Optional.of(run), store.runs().find(SyncRunId.of("run-1")));
 
-        SyncRun finished = new SyncRun(SyncRunId.of("run-1"), GROUP, ROOT, TriggerId.of("trig-1"),
+        SyncRun finished = new SyncRun(SyncRunId.of("run-1"), GROUP, TriggerId.of("trig-1"),
                 NODE_A, SyncRunState.COMPLETED, T0, T0.plusSeconds(10),
                 "{\"items\":3}", ErrorCode.BLOB_HASH_MISMATCH);
 
         store.runs().update(finished);
 
         assertEquals(Optional.of(finished), store.runs().find(SyncRunId.of("run-1")));
-        assertEquals(List.of(finished), store.runs().recent(ROOT, 5));
+        assertEquals(List.of(finished), store.runs().recent(GROUP, 5));
+        assertTrue(store.runs().recent(OTHER_GROUP, 5).isEmpty());
     }
 
     public void transactionCommits() {
-        SyncGroup group = new SyncGroup(GROUP, "Home", 0, T0);
+        SyncGroup group = new SyncGroup(GROUP, "Home", root("C:\\Docs"), 0, T0);
 
         store.inTransaction(transaction -> {
             transaction.groups().insert(group);
@@ -344,7 +363,7 @@ public final class MetadataStoreConformance {
     }
 
     public void transactionRollsBackOnException() {
-        SyncGroup group = new SyncGroup(GROUP, "Home", 0, T0);
+        SyncGroup group = new SyncGroup(GROUP, "Home", root("C:\\Docs"), 0, T0);
 
         assertThrows(IllegalStateException.class, () -> store.inTransaction(transaction -> {
             transaction.groups().insert(group);
@@ -355,24 +374,24 @@ public final class MetadataStoreConformance {
     }
 
     public void nestedTransactionUsesOuterTransaction() {
-        SyncGroup group = new SyncGroup(GROUP, "Home", 0, T0);
-        SyncRoot root = new SyncRoot(ROOT, GROUP, "C:\\Docs", "Docs", null, T0);
+        SyncGroup group = new SyncGroup(GROUP, "Home", root("C:\\Docs"), 0, T0);
+        SyncGroup other = new SyncGroup(OTHER_GROUP, "Other", root("D:\\Other"), 0, T0);
 
         store.inTransaction(outer -> {
             outer.groups().insert(group);
             return outer.inTransaction(inner -> {
-                inner.roots().insert(root);
+                inner.groups().insert(other);
                 return null;
             });
         });
 
         assertEquals(Optional.of(group), store.groups().find(GROUP));
-        assertEquals(Optional.of(root), store.roots().find(ROOT));
+        assertEquals(Optional.of(other), store.groups().find(OTHER_GROUP));
     }
 
     private Item item(ItemId id, LogicalPath path, String versionId,
                       Map<NodeId, Long> counters, Instant deletedAt) {
-        return new Item(id, ROOT, path, ItemKind.FILE, VersionId.of(versionId),
+        return new Item(id, GROUP, path, ItemKind.FILE, VersionId.of(versionId),
                 VersionVector.of(counters), deletedAt);
     }
 
@@ -384,7 +403,11 @@ public final class MetadataStoreConformance {
     }
 
     private Trigger trigger(String id, boolean enabled, Instant nextFireAt) {
-        return new Trigger(TriggerId.of(id), GROUP, ROOT, TriggerType.ALARM, "{}", enabled, nextFireAt);
+        return new Trigger(TriggerId.of(id), GROUP, TriggerType.ALARM, "{}", enabled, nextFireAt);
+    }
+
+    private static SyncRoot root(String physicalPath) {
+        return new SyncRoot(physicalPath, "Docs", null);
     }
 
     private static List<String> paths(ItemPage page) {

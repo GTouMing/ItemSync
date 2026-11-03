@@ -3,9 +3,9 @@ package github.gtouming.itemsync.sync.state;
 import github.gtouming.itemsync.domain.compat.Compat;
 
 import github.gtouming.itemsync.domain.identity.BlobHash;
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.model.FileVersion;
 import github.gtouming.itemsync.domain.model.Item;
 import github.gtouming.itemsync.domain.model.ItemKind;
@@ -41,26 +41,26 @@ public final class LocalReconciler {
     private final Path syncRoot;
     private final MetadataStore store;
     private final BlobStore blobs;
-    private final SyncRootId rootId;
+    private final GroupId groupId;
     private final NodeId localNode;
     private final PhysicalPathResolver paths;
     private final FileScanner scanner = new FileScanner();
     private final LocalStateWriter writer;
 
     public LocalReconciler(Path syncRoot, MetadataStore store, BlobStore blobs,
-                           SyncRootId rootId, NodeId localNode,
+                           GroupId groupId, NodeId localNode,
                            PhysicalPathResolver paths, Supplier<Instant> clock) {
         this.syncRoot = Objects.requireNonNull(syncRoot, "syncRoot");
         this.store = Objects.requireNonNull(store, "store");
         this.blobs = Objects.requireNonNull(blobs, "blobs");
-        this.rootId = Objects.requireNonNull(rootId, "rootId");
+        this.groupId = Objects.requireNonNull(groupId, "groupId");
         this.localNode = Objects.requireNonNull(localNode, "localNode");
         this.paths = Objects.requireNonNull(paths, "paths");
-        this.writer = new LocalStateWriter(store, rootId, clock);
+        this.writer = new LocalStateWriter(store, groupId, clock);
     }
 
-    public SyncRootId rootId() {
-        return rootId;
+    public GroupId groupId() {
+        return groupId;
     }
 
     public List<ManifestEntry> reconcile() throws IOException {
@@ -129,7 +129,7 @@ public final class LocalReconciler {
         List<Item> items = new ArrayList<>();
         String cursor = null;
         while (true) {
-            MetadataStore.ItemRepository.ItemPage page = store.items().page(rootId, cursor, PAGE_SIZE);
+            MetadataStore.ItemRepository.ItemPage page = store.items().page(groupId, cursor, PAGE_SIZE);
             items.addAll(page.items());
             cursor = page.nextCursor();
             if (cursor == null) {
@@ -139,11 +139,11 @@ public final class LocalReconciler {
     }
 
     public ManifestSnapshot manifestSince(long sinceSequence) throws IOException {
-        long current = store.items().currentSequence(rootId);
+        long current = store.items().currentSequence(groupId);
         long since = sinceSequence > current ? 0 : sinceSequence;
         List<ManifestEntry> entries = new ArrayList<>();
         for (MetadataStore.ItemRepository.ChangedItem changed
-                : store.items().changedSince(rootId, since, current)) {
+                : store.items().changedSince(groupId, since, current)) {
             ManifestEntry entry = toEntry(changed.item());
             if (entry != null) {
                 entries.add(entry);

@@ -15,7 +15,6 @@ import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.identity.SyncRunId;
 import github.gtouming.itemsync.domain.model.ItemKind;
 import github.gtouming.itemsync.domain.model.ManifestEntry;
@@ -42,6 +41,7 @@ public final class FramePayloads {
         JsonObject json = new JsonObject();
         json.addProperty("nodeId", hello.nodeId().value());
         json.addProperty("protocolVersion", hello.protocolVersion());
+        json.addProperty("groupId", hello.groupId().value());
         json.addProperty("certificateFingerprint", hello.certificateFingerprint());
         return toBytes(json);
     }
@@ -51,7 +51,8 @@ public final class FramePayloads {
         return new Hello(
                 NodeId.of(string(json, "nodeId")),
                 integer(json, "protocolVersion"),
-                string(json, "certificateFingerprint"));
+                string(json, "certificateFingerprint"),
+                GroupId.parse(string(json, "groupId")));
     }
 
     public static byte[] encodePing(Ping ping) {
@@ -124,7 +125,6 @@ public final class FramePayloads {
         json.addProperty("runId", notify.runId().value());
         json.addProperty("groupId", notify.groupId().value());
         json.addProperty("logicalTime", notify.logicalTime().value());
-        json.addProperty("rootId", notify.rootId().value());
         json.add("vector", vectorToJson(notify.vectorSnapshot()));
         return toBytes(json);
     }
@@ -135,7 +135,6 @@ public final class FramePayloads {
                 SyncRunId.of(string(json, "runId")),
                 GroupId.parse(string(json, "groupId")),
                 LogicalClock.of(number(json, "logicalTime")),
-                SyncRootId.of(string(json, "rootId")),
                 vectorFromJson(object(json, "vector")));
     }
 
@@ -187,7 +186,7 @@ public final class FramePayloads {
 
     public static byte[] encodeManifestRequest(ManifestRequest request) {
         JsonObject json = new JsonObject();
-        json.addProperty("rootId", request.rootId().value());
+        json.addProperty("groupId", request.groupId().value());
         json.add("since", vectorToJson(request.since()));
         json.addProperty("sinceSequence", request.sinceSequence());
         if (request.ignoreHash() != null) {
@@ -199,7 +198,7 @@ public final class FramePayloads {
     public static ManifestRequest decodeManifestRequest(byte[] payload) {
         JsonObject json = parseObject(payload);
         return new ManifestRequest(
-                SyncRootId.of(string(json, "rootId")),
+                GroupId.parse(string(json, "groupId")),
                 vectorFromJson(object(json, "since")),
                 optionalNumber(json, "sinceSequence"),
                 optionalString(json, "ignoreHash"));

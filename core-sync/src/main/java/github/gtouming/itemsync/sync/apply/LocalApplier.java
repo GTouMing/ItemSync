@@ -5,10 +5,10 @@ import github.gtouming.itemsync.domain.compat.Compat;
 import github.gtouming.itemsync.domain.identity.BlobHash;
 import github.gtouming.itemsync.domain.identity.ConflictId;
 import github.gtouming.itemsync.domain.identity.DeviceId;
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.ItemId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.identity.VersionId;
 import github.gtouming.itemsync.domain.model.Conflict;
 import github.gtouming.itemsync.domain.model.Item;
@@ -44,24 +44,24 @@ public final class LocalApplier {
     private final MetadataStore store;
     private final BlobStore blobs;
     private final PhysicalPathResolver paths;
-    private final SyncRootId rootId;
+    private final GroupId groupId;
     private final NodeId localNode;
     private final DeviceId localDevice;
     private final Supplier<Instant> clock;
     private final LocalStateWriter writer;
 
     public LocalApplier(Path syncRoot, MetadataStore store, BlobStore blobs,
-                        PhysicalPathResolver paths, SyncRootId rootId,
+                        PhysicalPathResolver paths, GroupId groupId,
                         NodeId localNode, DeviceId localDevice, Supplier<Instant> clock) {
         this.syncRoot = Objects.requireNonNull(syncRoot, "syncRoot");
         this.store = Objects.requireNonNull(store, "store");
         this.blobs = Objects.requireNonNull(blobs, "blobs");
         this.paths = Objects.requireNonNull(paths, "paths");
-        this.rootId = Objects.requireNonNull(rootId, "rootId");
+        this.groupId = Objects.requireNonNull(groupId, "groupId");
         this.localNode = Objects.requireNonNull(localNode, "localNode");
         this.localDevice = Objects.requireNonNull(localDevice, "localDevice");
         this.clock = Objects.requireNonNull(clock, "clock");
-        this.writer = new LocalStateWriter(store, rootId, clock);
+        this.writer = new LocalStateWriter(store, groupId, clock);
     }
 
     public VersionId applyRemote(ManifestEntry remote, BlobFetcher fetcher, NodeId sourceNode)
@@ -150,7 +150,7 @@ public final class LocalApplier {
     private void recordConflict(LogicalPath path, VersionId localVersion,
                                 VersionId remoteVersion, VersionVector remoteVector,
                                 LogicalPath copyPath) {
-        Optional<ItemId> itemId = store.items().find(rootId, path).map(Item::id);
+        Optional<ItemId> itemId = store.items().find(groupId, path).map(Item::id);
         if (!itemId.isPresent()) {
             return;
         }

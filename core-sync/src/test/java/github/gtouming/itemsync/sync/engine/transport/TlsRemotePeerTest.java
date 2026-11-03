@@ -1,10 +1,10 @@
 package github.gtouming.itemsync.sync.engine.transport;
 
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.BlobHash;
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.model.ManifestEntry;
 import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.store.metadata.jdbc.JdbcMetadataStore;
@@ -14,7 +14,15 @@ import github.gtouming.itemsync.sync.engine.SyncEngine;
 import github.gtouming.itemsync.sync.engine.SyncRunResult;
 import github.gtouming.itemsync.sync.plan.SyncPlanner;
 import github.gtouming.itemsync.sync.state.LocalReconciler;
+import github.gtouming.itemsync.transport.frame.Frame;
+import github.gtouming.itemsync.transport.frame.FramePayloads;
+import github.gtouming.itemsync.transport.frame.FrameType;
+import github.gtouming.itemsync.transport.frame.ManifestEnd;
+import github.gtouming.itemsync.transport.frame.ManifestPage;
+import github.gtouming.itemsync.transport.net.FrameConnection;
+import github.gtouming.itemsync.transport.net.FrameHandler;
 import github.gtouming.itemsync.transport.net.TlsTransportServer;
+import github.gtouming.itemsync.transport.tls.GroupPinnedTrustManager;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -30,9 +38,14 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TlsRemotePeerTest {
 
@@ -41,7 +54,7 @@ class TlsRemotePeerTest {
     private static final NodeId NODE_B = NodeId.of("node-b");
     private static final DeviceId DEVICE_A = DeviceId.of("device-a");
     private static final DeviceId DEVICE_B = DeviceId.of("device-b");
-    private static final SyncRootId ROOT = SyncRootId.of("root-1");
+    private static final GroupId GROUP = GroupId.parse("group001");
 
     private static TlsIdentity serverIdentity;
     private static TlsIdentity clientIdentity;
@@ -71,6 +84,30 @@ class TlsRemotePeerTest {
     }
 
     @Test
+    void reportsDisconnectedAfterTheServerClosesTheConnection() throws Exception {
+        try (TlsTransportServer server = new TlsTransportServer(
+                serverIdentity, clientIdentity.fingerprint(), 0, (connection, frame) -> {
+                })) {
+            server.start();
+            TlsRemotePeer peer = TlsRemotePeer.connect("127.0.0.1", server.port(),
+                    clientIdentity, serverIdentity.fingerprint(), GROUP, NODE_A,
+                    temp.resolve("transfer"));
+            try {
+                assertTrue(peer.isConnected());
+                Thread.sleep(100);
+                server.closeConnections();
+                long deadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+                while (peer.isConnected() && System.nanoTime() < deadline) {
+                    Thread.sleep(10);
+                }
+                assertFalse(peer.isConnected());
+            } finally {
+                peer.close();
+            }
+        }
+    }
+
+    @Test
     void fetchesManifestAndBlobOverTls() throws Exception {
         byte[] content = "hello over tls".getBytes(StandardCharsets.UTF_8);
         a.write("docs/a.txt", "hello over tls");
@@ -83,11 +120,74 @@ class TlsRemotePeerTest {
 
         try (TlsTransportServer server = startServer(manifest);
              TlsRemotePeer peer = connect(server)) {
-            ManifestSnapshot fetched = peer.manifest(ROOT, 0L);
+            ManifestSnapshot fetched = peer.manifest(GROUP, 0L);
 
             assertEquals(paths(manifest), paths(fetched.entries()));
             try (InputStream in = peer.openBlob(hash)) {
                 assertArrayEquals(content, in.readAllBytes());
+            }
+        }
+    }
+
+    @Test
+    void sendsTheGroupIdAsTheSniServerName() throws Exception {
+        a.write("docs/a.txt", "hello");
+        List<ManifestEntry> manifest = a.reconcile();
+        AtomicReference<GroupId> serverSideGroup = new AtomicReference<>();
+        RemoteSyncServer delegate = new RemoteSyncServer(GROUP,
+                (groupId, since) -> new ManifestSnapshot(manifest, 0L), BlobSources.of(a.blobs));
+        FrameHandler handler = (connection, frame) -> {
+            serverSideGroup.compareAndSet(null, connection.requestedGroup().orElse(null));
+            delegate.onFrame(connection, frame);
+        };
+
+        try (TlsTransportServer server = new TlsTransportServer(
+                serverIdentity, new GroupPinnedTrustManager(
+                        Map.of(GROUP, Set.of(clientIdentity.fingerprint()))), 0, handler)) {
+            server.start();
+            try (TlsRemotePeer peer = connect(server)) {
+                peer.manifest(GROUP, 0L);
+
+                assertEquals(GROUP, serverSideGroup.get(),
+                        "the server could not read the SNI group of the sync connection");
+            }
+        }
+    }
+
+    @Test
+    void manifestProgressResetsTheTimeout() throws Exception {
+        a.write("a.txt", "a");
+        a.write("b.txt", "b");
+        List<ManifestEntry> manifest = a.reconcile();
+        FrameHandler handler = new FrameHandler() {
+            @Override
+            public void onFrame(FrameConnection connection, Frame frame) {
+                if (frame.type() != FrameType.MANIFEST_REQUEST) {
+                    return;
+                }
+                int first = Math.max(1, manifest.size() / 3);
+                int second = Math.max(first, manifest.size() * 2 / 3);
+                connection.send(page(manifest.subList(0, first)));
+                sleep(500);
+                connection.send(page(manifest.subList(first, second)));
+                sleep(500);
+                connection.send(page(manifest.subList(second, manifest.size())));
+                connection.send(new Frame(FrameType.MANIFEST_END,
+                        FramePayloads.encodeManifestEnd(
+                                new ManifestEnd(manifest.size(), 0L))));
+            }
+        };
+
+        try (TlsTransportServer server = new TlsTransportServer(
+                serverIdentity, clientIdentity.fingerprint(), 0, handler)) {
+            server.start();
+            try (TlsRemotePeer peer = TlsRemotePeer.connect(
+                    "127.0.0.1", server.port(), clientIdentity,
+                    serverIdentity.fingerprint(), GROUP, NODE_A, temp.resolve("downloads"),
+                    Duration.ofMillis(800), Duration.ZERO)) {
+                ManifestSnapshot snapshot = peer.manifest(GROUP, 0L);
+
+                assertEquals(manifest.size(), snapshot.entries().size());
             }
         }
     }
@@ -106,9 +206,22 @@ class TlsRemotePeerTest {
         }
     }
 
+    private static Frame page(List<ManifestEntry> entries) {
+        return new Frame(FrameType.MANIFEST_PAGE,
+                FramePayloads.encodeManifestPage(new ManifestPage(entries, null)));
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private TlsTransportServer startServer(List<ManifestEntry> manifest) throws IOException {
-        RemoteSyncServer handler = new RemoteSyncServer(ROOT,
-                (rootId, since) -> new ManifestSnapshot(manifest, 0L), BlobSources.of(a.blobs));
+        RemoteSyncServer handler = new RemoteSyncServer(GROUP,
+                (groupId, since) -> new ManifestSnapshot(manifest, 0L), BlobSources.of(a.blobs));
         TlsTransportServer server = new TlsTransportServer(
                 serverIdentity, clientIdentity.fingerprint(), 0, handler);
         server.start();
@@ -117,7 +230,7 @@ class TlsRemotePeerTest {
 
     private TlsRemotePeer connect(TlsTransportServer server) throws IOException {
         return TlsRemotePeer.connect("127.0.0.1", server.port(), clientIdentity,
-                serverIdentity.fingerprint(), NODE_A, temp.resolve("downloads"),
+                serverIdentity.fingerprint(), GROUP, NODE_A, temp.resolve("downloads"),
                 Duration.ofSeconds(10));
     }
 
@@ -142,9 +255,9 @@ class TlsRemotePeerTest {
             Files.createDirectories(root);
             this.blobs = new FileSystemBlobStore(base.resolve("data"));
             this.store = JdbcMetadataStore.open("jdbc:sqlite:" + base.resolve("meta.db").toAbsolutePath());
-            this.reconciler = new LocalReconciler(root, store, blobs, ROOT, nodeId,
+            this.reconciler = new LocalReconciler(root, store, blobs, GROUP, nodeId,
                     PathResolvers.posix(), () -> T0);
-            LocalApplier applier = new LocalApplier(root, store, blobs, PathResolvers.posix(), ROOT,
+            LocalApplier applier = new LocalApplier(root, store, blobs, PathResolvers.posix(), GROUP,
                     nodeId, deviceId, () -> T0);
             this.engine = new SyncEngine(reconciler, applier, new SyncPlanner());
         }

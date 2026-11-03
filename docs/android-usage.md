@@ -1,6 +1,6 @@
 # Android 使用说明
 
-> 当前 APK 仍是过渡实现。本机密码、Android Keystore 中的 NUK、同组发现、在线状态、短码配对和成对信任已经接入代码，但本轮变更没有做 Android 真机验证；首次真机使用前需要按本文手工确认。
+> 当前 APK 仍是过渡实现。本机密码、Android Keystore 中的 NUK、同组发现、在线状态、信任开关和成对信任已经接入代码，但本轮变更没有做 Android 真机验证；首次真机使用前需要按本文手工确认。
 
 ## 安装
 
@@ -23,7 +23,7 @@ adb install -r "E:\Projects\ItemSync\android\build\outputs\apk\debug\android-deb
    - 不再填写邻居地址或证书指纹；这些旧配置会被忽略，并在保存时清除。
 3. 点“保存并启动”，允许通知权限。服务启动后会自动发布 mDNS 并监听同步端口。
 4. 打开“局域网设备”，同组设备会显示设备 ID、地址、最近在线和信任状态。
-5. 两台设备核对同一个 6 位短码后，各自点“信任 / 配对”。双方都信任后才会同步；任意一方撤销即停止。
+5. 两台设备互相开启信任；首次开启会固定当前发现的证书指纹，之后同步握手会校验证书是否一致。
 6. 首次配对后可以点“立即同步”或等待定时同步/文件变动触发。
 
 已有安装升级时，旧的身份口令会自动作为 NUK 继续使用；首次打开新版只需要设置本机密码。
@@ -43,6 +43,19 @@ adb push test.txt /sdcard/Android/data/github.gtouming.itemsync/files/root/
 ```
 
 Android 11+ 的文件管理器通常不能直接访问 `Android/data`；用 adb 或应用自身。
+
+## 命令行调试入口
+
+Debug APK 还包含一个只在 debug 构建中存在的 `DebugAdminProvider`，可用桌面端 `itemsync-cli` 读取或修改配置/信任：
+
+```powershell
+itemsync-cli status --platform android --json
+itemsync-cli config get --platform android --json
+itemsync-cli config set group <组ID> --platform android --yes
+itemsync-cli trust list --platform android --json
+```
+
+修改前必须停止 Android 同步服务；release APK 不包含该 provider。
 
 ## 排查
 
@@ -65,7 +78,7 @@ adb logcat -s ItemSyncService
 
 ## 已知限制
 
-- 同组发现、在线状态和短码配对已接入代码，但**未在本轮做真机验证**；不要把它描述为已通过设备验证。
+- 同组发现、在线状态和成对信任已接入代码，但**未在本轮做真机验证**；不要把它描述为已通过设备验证。首次信任是 TOFU，不能防首次中间人。
 - 目前只支持应用专属存储作为同步根，尚未接入 SAF/分区存储授权。
 - 本机密码只锁 GUI，不加密本地数据；静态安全依赖系统文件级加密。
 - Debug APK，未做正式签名。

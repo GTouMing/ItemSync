@@ -58,6 +58,11 @@ public final class PinnedTrustManager implements X509TrustManager {
     }
 
     private void verify(X509Certificate[] chain) throws CertificateException {
+        verifyPinned(chain, expectedFingerprints);
+    }
+
+    static void verifyPinned(X509Certificate[] chain, Set<String> expectedFingerprints)
+            throws CertificateException {
         if (chain == null || chain.length == 0) {
             throw new CertificateException("peer presented no certificate");
         }
@@ -65,9 +70,35 @@ public final class PinnedTrustManager implements X509TrustManager {
         leaf.checkValidity();
         String actual = TlsIdentity.fingerprint(leaf);
         if (!expectedFingerprints.contains(actual)) {
-            throw new CertificateException(
+            throw new FingerprintMismatchException(actual,
                     "certificate fingerprint mismatch: expected one of "
                             + expectedFingerprints + ", got " + actual);
+        }
+    }
+
+    public static FingerprintMismatchException findFingerprintMismatch(Throwable failure) {
+        Throwable current = failure;
+        while (current != null) {
+            if (current instanceof FingerprintMismatchException mismatch) {
+                return mismatch;
+            }
+            current = current.getCause();
+        }
+        return null;
+    }
+
+    public static final class FingerprintMismatchException extends CertificateException {
+
+        private final String actualFingerprint;
+
+        // package-private: fingerprint mismatches are also raised by GroupPinnedTrustManager
+        FingerprintMismatchException(String actualFingerprint, String message) {
+            super(message);
+            this.actualFingerprint = actualFingerprint;
+        }
+
+        public String actualFingerprint() {
+            return actualFingerprint;
         }
     }
 }

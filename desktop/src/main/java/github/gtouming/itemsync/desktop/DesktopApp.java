@@ -3,6 +3,7 @@ package github.gtouming.itemsync.desktop;
 import github.gtouming.itemsync.domain.model.FileVersion;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.security.NodeUnlockKey;
+import github.gtouming.itemsync.platform.desktop.DesktopConfig;
 import github.gtouming.itemsync.platform.desktop.DesktopSecurity;
 import github.gtouming.itemsync.platform.desktop.PathSupport;
 import github.gtouming.itemsync.platform.desktop.WindowsAutostart;
@@ -10,10 +11,14 @@ import github.gtouming.itemsync.sync.state.ConflictResolver;
 import github.gtouming.itemsync.sync.state.VersionHistoryService;
 import github.gtouming.itemsync.sync.trust.PeerTrustCoordinator;
 import github.gtouming.itemsync.sync.trust.RemoteTrust;
+import github.gtouming.itemsync.sync.trust.RemoteTrustFailure;
 import github.gtouming.itemsync.transport.discovery.PresenceTracker;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.animation.Animation;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
@@ -33,6 +38,7 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 
 import java.awt.AWTException;
 import java.awt.Color;
@@ -57,6 +63,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 public final class DesktopApp extends Application {
 
@@ -294,7 +302,8 @@ public final class DesktopApp extends Application {
             try {
                 service.syncNow();
             } catch (IOException e) {
-                Platform.runLater(() -> errorLabel.setText("同步失败: " + e.getMessage()));
+                Platform.runLater(() -> errorLabel.setText(
+                        "同步失败: " + UserFacingErrors.describe(e)));
             } finally {
                 Platform.runLater(() -> {
                     if (syncButton != null) {
@@ -321,8 +330,8 @@ public final class DesktopApp extends Application {
 
     private void render(DesktopService.Status status) {
         nodeLabel.setText(status.nodeId().value() + "  (port " + status.port() + ")");
-        groupLabel.setText(config.group().value());
-        rootLabel.setText(status.root().toString());
+        groupLabel.setText(status.groupId() == null ? "（未配置同步组）" : status.groupId().value());
+        rootLabel.setText(status.root() == null ? "（未配置同步根）" : status.root().toString());
         fingerprintLabel.setText(status.fingerprint());
         if (status.lastRun() == null) {
             lastRunLabel.setText("尚未同步");
@@ -335,9 +344,11 @@ public final class DesktopApp extends Application {
                     ? "处理冲突"
                     : "处理冲突 (" + status.openConflicts() + ")");
         }
-        errorLabel.setText(status.lastError() == null
+        errorLabel.setText(status.trustWarning() != null
+                ? "信任警告: " + status.trustWarning()
+                : status.lastError() == null
                 ? ""
-                : "最近错误: " + status.lastError().getMessage());
+                : "最近错误: " + UserFacingErrors.describe(status.lastError()));
     }
 
     private void showConflictsAsync() {
@@ -675,16 +686,20 @@ public final class DesktopApp extends Application {
         });
         list.getSelectionModel().selectFirst();
 
-        Label hint = new Label("信任需要双方操作：两台设备都确认同一个 6 位短码并点信任后才会同步。"
+        Label hint = new Label("信任需要双方操作：两台设备都开启信任后才会同步；"
+                + "首次开启信任会固定当前发现的证书指纹，无法防止首次中间人；请核对设备名。"
                 + "组 ID 只决定能发现哪些设备。");
         hint.setWrapText(true);
+        Label deviceError = new Label();
+        deviceError.setStyle("-fx-text-fill: #b00020;");
+        deviceError.setWrapText(true);
 
-        ButtonType pair = new ButtonType("信任 / 配对", ButtonBar.ButtonData.OTHER);
+        ButtonType pair = new ButtonType("开启信任", ButtonBar.ButtonData.OTHER);
         ButtonType revoke = new ButtonType("撤销信任", ButtonBar.ButtonData.OTHER);
         ButtonType refreshButtonType = new ButtonType("刷新", ButtonBar.ButtonData.OTHER);
         ButtonType close = new ButtonType("关闭", ButtonBar.ButtonData.CANCEL_CLOSE);
         dialog.getDialogPane().getButtonTypes().addAll(pair, revoke, refreshButtonType, close);
-        VBox content = new VBox(10, list, hint);
+        VBox content = new VBox(10, list, hint, deviceError);
         content.setPadding(new Insets(10));
         dialog.getDialogPane().setContent(content);
         dialog.getDialogPane().setPrefWidth(780);
@@ -692,52 +707,66 @@ public final class DesktopApp extends Application {
         Button pairButton = (Button) dialog.getDialogPane().lookupButton(pair);
         Button revokeButton = (Button) dialog.getDialogPane().lookupButton(revoke);
         Button refreshButton = (Button) dialog.getDialogPane().lookupButton(refreshButtonType);
+        AtomicBoolean busy = new AtomicBoolean();
         Runnable updateButtons = () -> {
             PeerTrustCoordinator.PeerView selected = list.getSelectionModel().getSelectedItem();
-            pairButton.setDisable(selected == null || selected.locallyTrusted()
-                    || !selected.identityVerified());
-            revokeButton.setDisable(selected == null || !selected.locallyTrusted());
+            boolean locked = busy.get();
+            pairButton.setDisable(locked || selected == null || selected.locallyTrusted());
+            revokeButton.setDisable(locked || selected == null || !selected.locallyTrusted());
         };
         list.getSelectionModel().selectedItemProperty().addListener(
                 (observable, oldValue, newValue) -> updateButtons.run());
         updateButtons.run();
 
-        Runnable refresh = () -> {
-            pairButton.setDisable(true);
-            revokeButton.setDisable(true);
-            worker.submit(() -> {
-                try {
-                    List<PeerTrustCoordinator.PeerView> refreshed = service.peerViews();
-                    Platform.runLater(() -> {
-                        list.getItems().setAll(refreshed);
-                        if (!refreshed.isEmpty()) {
-                            list.getSelectionModel().selectFirst();
-                        }
-                        updateButtons.run();
-                    });
-                } catch (RuntimeException e) {
-                    Platform.runLater(() -> {
-                        showError("刷新在线设备失败: " + e.getMessage());
-                        updateButtons.run();
-                    });
-                }
-            });
-        };
+        AtomicReference<CoalescingRefresher<PeerTrustCoordinator.PeerView>> refresherRef =
+                new AtomicReference<>();
+        CoalescingRefresher<PeerTrustCoordinator.PeerView> refresher = new CoalescingRefresher<>(
+                "itemsync-device-refresh",
+                service::peerViews,
+                (generation, refreshed) -> Platform.runLater(() -> {
+                    CoalescingRefresher<PeerTrustCoordinator.PeerView> current = refresherRef.get();
+                    if (!dialog.isShowing() || current == null || !current.isCurrent(generation)) {
+                        return;
+                    }
+                    applyPeerViews(list, refreshed);
+                    deviceError.setText("");
+                    updateButtons.run();
+                }),
+                failure -> Platform.runLater(() -> {
+                    if (dialog.isShowing()) {
+                        deviceError.setText("刷新在线设备失败: " + failure.getMessage());
+                    }
+                    updateButtons.run();
+                }));
+        refresherRef.set(refresher);
 
         pairButton.addEventFilter(ActionEvent.ACTION, event -> {
             event.consume();
             PeerTrustCoordinator.PeerView selected = list.getSelectionModel().getSelectedItem();
-            if (selected == null || !selected.identityVerified() || !confirmPairing(selected)) {
+            if (selected == null) {
                 return;
             }
-            try {
-                service.trustPeer(selected.presence().peer());
-                refresh.run();
-                syncAsync();
-            } catch (Exception e) {
-                showError("已记录本机信任，但连接失败；等待对方信任后重试: " + e.getMessage());
-                refresh.run();
-            }
+            busy.set(true);
+            updateButtons.run();
+            refresher.submit(() -> {
+                try {
+                    service.trustPeer(selected.presence().peer());
+                    Platform.runLater(() -> {
+                        busy.set(false);
+                        refresher.request(true);
+                        updateButtons.run();
+                        syncAsync();
+                    });
+                } catch (Exception e) {
+                    Platform.runLater(() -> {
+                        busy.set(false);
+                        deviceError.setText("已记录本机信任，但连接失败；等待对方信任后重试: "
+                                + e.getMessage());
+                        refresher.request(true);
+                        updateButtons.run();
+                    });
+                }
+            });
         });
         revokeButton.addEventFilter(ActionEvent.ACTION, event -> {
             event.consume();
@@ -745,19 +774,59 @@ public final class DesktopApp extends Application {
             if (selected == null) {
                 return;
             }
-            try {
-                service.untrustPeer(selected.presence().peer());
-                refresh.run();
-            } catch (Exception e) {
-                showError("撤销信任失败: " + e.getMessage());
-            }
+            busy.set(true);
+            updateButtons.run();
+            refresher.submit(() -> {
+                try {
+                    service.untrustPeer(selected.presence().peer());
+                    Platform.runLater(() -> {
+                        busy.set(false);
+                        refresher.request(true);
+                        updateButtons.run();
+                    });
+                } catch (Exception e) {
+                    Platform.runLater(() -> {
+                        busy.set(false);
+                        deviceError.setText("撤销信任失败: " + e.getMessage());
+                        updateButtons.run();
+                    });
+                }
+            });
         });
         refreshButton.addEventFilter(ActionEvent.ACTION, event -> {
             event.consume();
-            refresh.run();
+            refresher.request(true);
+        });
+
+        Timeline autoRefresh = new Timeline(
+                new KeyFrame(Duration.seconds(3), event -> refresher.request(false)));
+        autoRefresh.setCycleCount(Animation.INDEFINITE);
+        autoRefresh.play();
+        dialog.setOnShown(event -> refresher.request(true));
+        dialog.setOnHidden(event -> {
+            autoRefresh.stop();
+            refresher.close();
         });
 
         dialog.showAndWait();
+    }
+
+    private static void applyPeerViews(ListView<PeerTrustCoordinator.PeerView> list,
+                                       List<PeerTrustCoordinator.PeerView> refreshed) {
+        PeerTrustCoordinator.PeerView selected = list.getSelectionModel().getSelectedItem();
+        String keep = selected == null ? null : selected.presence().peer().deviceId().value();
+        list.getItems().setAll(refreshed);
+        if (keep != null) {
+            for (PeerTrustCoordinator.PeerView view : refreshed) {
+                if (view.presence().peer().deviceId().value().equals(keep)) {
+                    list.getSelectionModel().select(view);
+                    return;
+                }
+            }
+        }
+        if (list.getSelectionModel().getSelectedItem() == null && !refreshed.isEmpty()) {
+            list.getSelectionModel().selectFirst();
+        }
     }
 
     private static String trustState(PeerTrustCoordinator.PeerView view) {
@@ -765,39 +834,42 @@ public final class DesktopApp extends Application {
             return switch (view.remoteTrust()) {
                 case TRUSTED -> "对方已信任你，等待本机确认";
                 case UNTRUSTED -> "未信任";
-                case UNKNOWN -> "未信任（无法确认对方状态）";
+                case UNKNOWN -> view.connected()
+                        ? "未信任（已连接，等待本机确认）"
+                        : "未信任（" + trustFailureText(view) + "）";
             };
         }
-        if (view.remoteTrust() == RemoteTrust.TRUSTED && view.connected()) {
-            return "已信任（双方，已连接）";
-        }
         return switch (view.remoteTrust()) {
-            case TRUSTED -> "已信任（双方）";
-            case UNTRUSTED -> "已信任（等待对方确认）";
-            case UNKNOWN -> "已信任（无法确认对方状态）";
+            case TRUSTED -> view.connected()
+                    ? "双方已开启信任，已连接"
+                    : "双方已开启信任";
+            case UNTRUSTED -> view.connected()
+                    ? "本机已开启信任，已连接（对方未信任）"
+                    : "本机已开启信任（等待对方确认）";
+            case UNKNOWN -> view.connected()
+                    ? "本机已开启信任，已连接（" + trustFailureText(view) + "）"
+                    : "本机已开启信任（" + trustFailureText(view) + "）";
         };
     }
 
-    private boolean confirmPairing(PeerTrustCoordinator.PeerView view) {
-        String code = service.pairingCode(view.presence().peer());
-        Dialog<Boolean> dialog = new Dialog<>();
-        dialog.setTitle("ItemSync");
-        dialog.setHeaderText("核对配对短码");
-        Label codeLabel = new Label(code);
-        codeLabel.setStyle("-fx-font-size: 32px; -fx-font-family: monospace;");
-        Label hint = new Label("在另一台设备上对 " + view.presence().peer().deviceId().value()
-                + " 执行信任，并确认两边显示相同的短码。\n确认后本机才开始信任该设备。");
-        hint.setWrapText(true);
-        VBox content = new VBox(12, codeLabel, hint);
-        content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
-        ButtonType ok = new ButtonType("已核对，信任", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
-        dialog.setResultConverter(button -> button == ok ? Boolean.TRUE : null);
-        return dialog.showAndWait().orElse(false);
+    private static String trustFailureText(PeerTrustCoordinator.PeerView view) {
+        RemoteTrustFailure failure = view.remoteTrustFailure();
+        if (failure == null) {
+            return "无法确认对方状态";
+        }
+        return switch (failure) {
+            case NO_PAIRING_ENDPOINT -> "对端未提供配对端点";
+            case QUERY_TIMEOUT -> "配对状态查询超时";
+            case IDENTITY_MISMATCH -> "配对端点身份校验失败";
+            case CONNECTION_FAILED -> "无法连接配对端点";
+        };
     }
 
     private void changeGroup(Stage stage) {
+        if (!config.hasGroups()) {
+            showInfo("本机还没有同步组，无法修改组 ID。");
+            return;
+        }
         Dialog<Boolean> dialog = new Dialog<>();
         dialog.setTitle("ItemSync");
         dialog.setHeaderText("修改组 ID");

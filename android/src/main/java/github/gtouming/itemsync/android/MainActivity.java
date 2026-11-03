@@ -2,7 +2,6 @@ package github.gtouming.itemsync.android;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.ComponentName;
 import android.content.Intent;
@@ -10,7 +9,9 @@ import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.text.InputType;
 import android.view.View;
 import android.view.ViewGroup;
@@ -26,10 +27,15 @@ import android.widget.Toast;
 import github.gtouming.itemsync.domain.security.LocalPassword;
 import github.gtouming.itemsync.sync.trust.PeerTrustCoordinator;
 import github.gtouming.itemsync.sync.trust.RemoteTrust;
+import github.gtouming.itemsync.sync.trust.RemoteTrustFailure;
 
 import java.net.InetAddress;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class MainActivity extends Activity {
 
@@ -169,7 +175,7 @@ public final class MainActivity extends Activity {
     private void showConfig() {
         LinearLayout layout = vertical();
         layout.addView(hint("同步根默认为应用专属目录。本机密码只锁界面；身份由 NUK 静默解锁。\n"
-                + "同组设备会在“局域网设备”中显示，核对 6 位短码后建立信任。"));
+                + "同组设备会在“局域网设备”中显示，开启信任后建立连接。"));
         rootField = field(layout, "同步根", config.rootPath(), false);
         groupField = field(layout, "组 ID", config.groupId(), false);
         portField = field(layout, "端口", String.valueOf(config.port()), true);
@@ -292,7 +298,7 @@ public final class MainActivity extends Activity {
                 }
                 runOnUiThread(() -> {
                     if (deviceDialog != null) {
-                        deviceDialog.reload();
+                        deviceDialog.reload(true);
                     }
                 });
             } catch (Exception e) {
@@ -302,44 +308,39 @@ public final class MainActivity extends Activity {
         }).start();
     }
 
-    private boolean confirmPairing(PeerTrustCoordinator.PeerView view, Runnable onConfirm) {
-        SyncForegroundService service = boundService;
-        if (service == null) {
-            return false;
-        }
-        String code;
-        try {
-            code = service.pairingCode(view.presence().peer());
-        } catch (RuntimeException e) {
-            Toast.makeText(this, "无法生成配对短码: " + message(e), Toast.LENGTH_LONG).show();
-            return false;
-        }
-        new AlertDialog.Builder(this)
-                .setTitle("核对配对短码")
-                .setMessage(code + "\n\n在另一台设备上对 "
-                        + view.presence().peer().deviceId().value()
-                        + " 执行信任，并确认两边显示相同的短码。")
-                .setPositiveButton("已核对，信任", (dialog, which) -> onConfirm.run())
-                .setNegativeButton("取消", null)
-                .show();
-        return true;
-    }
-
     private static String trustState(PeerTrustCoordinator.PeerView view) {
         if (!view.locallyTrusted()) {
             return switch (view.remoteTrust()) {
                 case TRUSTED -> "对方已信任你，等待本机确认";
                 case UNTRUSTED -> "未信任";
-                case UNKNOWN -> "未信任（无法确认对方状态）";
+                case UNKNOWN -> view.connected()
+                        ? "未信任（已连接，等待本机确认）"
+                        : "未信任（" + trustFailureText(view) + "）";
             };
         }
-        if (view.remoteTrust() == RemoteTrust.TRUSTED && view.connected()) {
-            return "已信任（双方，已连接）";
-        }
         return switch (view.remoteTrust()) {
-            case TRUSTED -> "已信任（双方）";
-            case UNTRUSTED -> "已信任（等待对方确认）";
-            case UNKNOWN -> "已信任（无法确认对方状态）";
+            case TRUSTED -> view.connected()
+                    ? "双方已开启信任，已连接"
+                    : "双方已开启信任";
+            case UNTRUSTED -> view.connected()
+                    ? "本机已开启信任，已连接（对方未信任）"
+                    : "本机已开启信任（等待对方确认）";
+            case UNKNOWN -> view.connected()
+                    ? "本机已开启信任，已连接（" + trustFailureText(view) + "）"
+                    : "本机已开启信任（" + trustFailureText(view) + "）";
+        };
+    }
+
+    private static String trustFailureText(PeerTrustCoordinator.PeerView view) {
+        RemoteTrustFailure failure = view.remoteTrustFailure();
+        if (failure == null) {
+            return "无法确认对方状态";
+        }
+        return switch (failure) {
+            case NO_PAIRING_ENDPOINT -> "对端未提供配对端点";
+            case QUERY_TIMEOUT -> "配对状态查询超时";
+            case IDENTITY_MISMATCH -> "配对端点身份校验失败";
+            case CONNECTION_FAILED -> "无法连接配对端点";
         };
     }
 
@@ -364,9 +365,20 @@ public final class MainActivity extends Activity {
         private final Dialog dialog;
         private final ListView list;
         private final TextView emptyLabel;
+        private final TextView deviceError;
         private final ArrayAdapter<PeerTrustCoordinator.PeerView> adapter;
         private final Button pairButton;
         private final Button revokeButton;
+        private final ExecutorService refresher = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "itemsync-device-refresh");
+            thread.setDaemon(true);
+            return thread;
+        });
+        private final Handler handler = new Handler(Looper.getMainLooper());
+        private final AtomicBoolean refreshing = new AtomicBoolean();
+        private final AtomicBoolean pendingForce = new AtomicBoolean();
+        private Runnable periodic;
+        private String selectedDeviceId;
 
         private DeviceDialog(List<PeerTrustCoordinator.PeerView> views) {
             dialog = new Dialog(MainActivity.this);
@@ -380,6 +392,12 @@ public final class MainActivity extends Activity {
             emptyLabel = new TextView(MainActivity.this);
             emptyLabel.setText("同组内暂无在线设备");
             content.addView(emptyLabel);
+
+            TextView hint = new TextView(MainActivity.this);
+            hint.setText("首次开启信任会固定当前发现的证书指纹，无法防止首次中间人；"
+                    + "请核对设备名。组 ID 只决定能发现哪些设备。");
+            hint.setTextSize(12);
+            content.addView(hint);
 
             adapter = new ArrayAdapter<PeerTrustCoordinator.PeerView>(
                     MainActivity.this, android.R.layout.simple_list_item_1,
@@ -395,12 +413,22 @@ public final class MainActivity extends Activity {
             list = new ListView(MainActivity.this);
             list.setAdapter(adapter);
             list.setChoiceMode(ListView.CHOICE_MODE_SINGLE);
-            list.setOnItemClickListener((parent, view, position, id) -> updateButtons());
+            list.setOnItemClickListener((parent, view, position, id) -> {
+                PeerTrustCoordinator.PeerView selected = adapter.getItem(position);
+                selectedDeviceId = selected == null ? null
+                        : selected.presence().peer().deviceId().value();
+                updateButtons();
+            });
             content.addView(list, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(300)));
 
+            deviceError = new TextView(MainActivity.this);
+            deviceError.setTextColor(0xFFB00020);
+            deviceError.setTextSize(12);
+            content.addView(deviceError);
+
             pairButton = new Button(MainActivity.this);
-            pairButton.setText("信任 / 配对");
+            pairButton.setText("开启信任");
             pairButton.setOnClickListener(view -> pairSelected());
             content.addView(pairButton);
 
@@ -411,7 +439,7 @@ public final class MainActivity extends Activity {
 
             Button refresh = new Button(MainActivity.this);
             refresh.setText("刷新");
-            refresh.setOnClickListener(view -> reload());
+            refresh.setOnClickListener(view -> reload(true));
             content.addView(refresh);
 
             Button close = new Button(MainActivity.this);
@@ -424,42 +452,92 @@ public final class MainActivity extends Activity {
         }
 
         private void show() {
+            periodic = () -> {
+                if (!dialog.isShowing()) {
+                    return;
+                }
+                reload(false);
+                handler.postDelayed(periodic, 3000);
+            };
+            dialog.setOnDismissListener(event -> {
+                handler.removeCallbacks(periodic);
+                refresher.shutdownNow();
+            });
             dialog.show();
+            reload(true);
+            handler.postDelayed(periodic, 3000);
         }
 
         private void dismiss() {
             dialog.dismiss();
         }
 
-        private void reload() {
+        private void reload(boolean force) {
             SyncForegroundService service = boundService;
             if (service == null) {
-                Toast.makeText(MainActivity.this, "同步服务已断开", Toast.LENGTH_SHORT).show();
+                if (force) {
+                    Toast.makeText(MainActivity.this, "同步服务已断开", Toast.LENGTH_SHORT).show();
+                }
                 return;
             }
-            pairButton.setEnabled(false);
-            revokeButton.setEnabled(false);
-            new Thread(() -> {
-                try {
-                    List<PeerTrustCoordinator.PeerView> views = service.peerViews();
-                    runOnUiThread(() -> render(views));
-                } catch (RuntimeException e) {
-                    runOnUiThread(() -> {
-                        Toast.makeText(MainActivity.this,
-                                "刷新在线设备失败: " + message(e), Toast.LENGTH_LONG).show();
-                        updateButtons();
-                    });
+            if (!refreshing.compareAndSet(false, true)) {
+                if (force) {
+                    pendingForce.set(true);
                 }
-            }).start();
+                return;
+            }
+            try {
+                refresher.execute(() -> {
+                    try {
+                        List<PeerTrustCoordinator.PeerView> views = service.peerViews(force);
+                        runOnUiThread(() -> {
+                            if (dialog.isShowing()) {
+                                render(views);
+                                deviceError.setText("");
+                            }
+                        });
+                    } catch (RuntimeException e) {
+                        runOnUiThread(() -> {
+                            if (dialog.isShowing()) {
+                                deviceError.setText("刷新在线设备失败: " + message(e));
+                            }
+                        });
+                    } finally {
+                        refreshing.set(false);
+                        if (pendingForce.compareAndSet(true, false)) {
+                            reload(true);
+                        }
+                    }
+                });
+            } catch (RejectedExecutionException ignored) {
+                refreshing.set(false);
+            }
         }
 
         private void render(List<PeerTrustCoordinator.PeerView> views) {
+            String keep = selectedDeviceId;
             adapter.clear();
             adapter.addAll(views);
             adapter.notifyDataSetChanged();
             emptyLabel.setVisibility(views.isEmpty() ? View.VISIBLE : View.GONE);
-            if (!views.isEmpty()) {
-                list.setItemChecked(0, true);
+            int position = -1;
+            if (keep != null) {
+                for (int i = 0; i < views.size(); i++) {
+                    if (views.get(i).presence().peer().deviceId().value().equals(keep)) {
+                        position = i;
+                        break;
+                    }
+                }
+            }
+            if (position < 0 && !views.isEmpty()) {
+                position = 0;
+            }
+            if (position >= 0) {
+                list.setItemChecked(position, true);
+                selectedDeviceId = views.get(position).presence().peer().deviceId().value();
+            } else {
+                list.clearChoices();
+                selectedDeviceId = null;
             }
             updateButtons();
         }
@@ -474,23 +552,22 @@ public final class MainActivity extends Activity {
 
         private void updateButtons() {
             PeerTrustCoordinator.PeerView view = selected();
-            pairButton.setEnabled(view != null && !view.locallyTrusted()
-                    && view.identityVerified());
+            pairButton.setEnabled(view != null && !view.locallyTrusted());
             revokeButton.setEnabled(view != null && view.locallyTrusted());
         }
 
         private void pairSelected() {
             PeerTrustCoordinator.PeerView view = selected();
-            if (view == null || !view.identityVerified()) {
+            if (view == null) {
                 return;
             }
-            confirmPairing(view, () -> callService("信任失败", () -> {
+            callService("信任失败", () -> {
                 SyncForegroundService service = boundService;
                 if (service == null) {
                     throw new IllegalStateException("同步服务已断开");
                 }
                 service.trustPeer(view.presence().peer());
-            }));
+            });
         }
 
         private void revokeSelected() {

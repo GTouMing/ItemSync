@@ -3,7 +3,6 @@ package github.gtouming.itemsync.cli;
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.store.metadata.jdbc.JdbcMetadataStore;
 import github.gtouming.itemsync.sync.apply.PathResolvers;
@@ -23,7 +22,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CliIncrementalSyncTest {
 
     private static final GroupId GROUP = GroupId.parse("group001");
-    private static final SyncRootId ROOT = SyncRootId.of("root-1");
     private static final String PASSWORD = "test";
 
     @TempDir
@@ -32,9 +30,9 @@ class CliIncrementalSyncTest {
     @Test
     void secondCliSyncAdvancesThePullCursorByOneChangedItem() throws Exception {
         Path aData = Files.createDirectories(temp.resolve("a-data"));
-        Path aRoot = Files.createDirectories(temp.resolve("a-root"));
+        Path aRoot = Files.createDirectories(temp.resolve("a-GROUP"));
         Path bData = Files.createDirectories(temp.resolve("b-data"));
-        Path bRoot = Files.createDirectories(temp.resolve("b-root"));
+        Path bRoot = Files.createDirectories(temp.resolve("b-GROUP"));
         Files.writeString(aRoot.resolve("one.txt"), "1", StandardCharsets.UTF_8);
         Files.writeString(aRoot.resolve("two.txt"), "2", StandardCharsets.UTF_8);
 
@@ -50,7 +48,7 @@ class CliIncrementalSyncTest {
         NodeId aNode = NodeId.of("cli-source-node");
         NodeId cliPeer = NodeId.of("peer-"
                 + aIdentity.fingerprint().substring(0, 8));
-        try (SyncNode server = new SyncNode(aNode, GROUP, ROOT, aRoot, aStore,
+        try (SyncNode server = new SyncNode(aNode, GROUP, aRoot, aStore,
                 new FileSystemBlobStore(aData), PathResolvers.posix(), aIdentity,
                 DeviceId.of("cli-source-device"), Set.of(bIdentity.fingerprint()), 0,
                 aData.resolve("transfer"))) {
@@ -86,7 +84,7 @@ class CliIncrementalSyncTest {
     private static long pullSequence(Path data, NodeId peer) throws Exception {
         try (JdbcMetadataStore store = JdbcMetadataStore.open(
                 "jdbc:sqlite:" + data.resolve("db/itemsync.sqlite").toAbsolutePath())) {
-            return store.cursors().pullSequence(ROOT, peer);
+            return store.cursors().pullSequence(GROUP, peer);
         }
     }
 }

@@ -31,7 +31,7 @@ public final class PresenceTracker implements PeerDiscoveryListener {
 
     @Override
     public void onPeerDiscovered(DiscoveredPeer peer) {
-        if (!groupId.equals(peer.groupId()) || selfNodeId.equals(peer.nodeId())) {
+        if (!peer.groupIds().contains(groupId) || selfNodeId.equals(peer.nodeId())) {
             return;
         }
         peers.put(peer.nodeId(), new Presence(peer, clock.get()));
@@ -39,7 +39,7 @@ public final class PresenceTracker implements PeerDiscoveryListener {
 
     @Override
     public void onPeerLost(DiscoveredPeer peer) {
-        if (groupId.equals(peer.groupId())) {
+        if (peer.groupIds().contains(groupId)) {
             peers.remove(peer.nodeId());
         }
     }

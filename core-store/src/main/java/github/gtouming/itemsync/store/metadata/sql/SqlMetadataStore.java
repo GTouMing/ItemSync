@@ -10,7 +10,7 @@ public abstract class SqlMetadataStore implements MetadataStore {
     private final SqlSession session;
     private final PeerRepository peers;
     private final SyncGroupRepository groups;
-    private final SyncRootRepository roots;
+    private final GroupDeviceRepository devices;
     private final ItemRepository items;
     private final VersionRepository versions;
     private final TombstoneRepository tombstones;
@@ -23,7 +23,7 @@ public abstract class SqlMetadataStore implements MetadataStore {
         this.session = Objects.requireNonNull(session, "session");
         this.peers = new SqlPeerRepository(session);
         this.groups = new SqlSyncGroupRepository(session);
-        this.roots = new SqlSyncRootRepository(session);
+        this.devices = new SqlGroupDeviceRepository(session);
         this.items = new SqlItemRepository(session);
         this.versions = new SqlVersionRepository(session);
         this.tombstones = new SqlTombstoneRepository(session);
@@ -61,8 +61,8 @@ public abstract class SqlMetadataStore implements MetadataStore {
     }
 
     @Override
-    public SyncRootRepository roots() {
-        return roots;
+    public GroupDeviceRepository devices() {
+        return devices;
     }
 
     @Override

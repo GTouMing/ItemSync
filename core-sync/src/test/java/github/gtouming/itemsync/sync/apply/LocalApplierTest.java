@@ -5,7 +5,6 @@ import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.model.FileVersion;
 import github.gtouming.itemsync.domain.model.Item;
 import github.gtouming.itemsync.domain.model.ItemKind;
@@ -43,8 +42,8 @@ class LocalApplierTest {
     private static final NodeId NODE_A = NodeId.of("node-a");
     private static final NodeId NODE_B = NodeId.of("node-b");
     private static final DeviceId DEVICE = DeviceId.of("device-a");
-    private static final SyncRootId ROOT = SyncRootId.of("root-1");
     private static final LogicalPath PATH = LogicalPath.of("docs/a.txt");
+    private static final GroupId GROUP = GroupId.parse("group001");
 
     @TempDir
     Path temp;
@@ -57,12 +56,12 @@ class LocalApplierTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        syncRoot = temp.resolve("root");
+        syncRoot = temp.resolve("GROUP");
         Files.createDirectories(syncRoot);
         blobs = new FileSystemBlobStore(temp.resolve("data"));
         store = JdbcMetadataStore.open("jdbc:sqlite:" + temp.resolve("metadata.db").toAbsolutePath());
         applier = new LocalApplier(syncRoot, store, blobs, PathResolvers.posix(),
-                ROOT, NODE_A, DEVICE, () -> T0);
+                GROUP, NODE_A, DEVICE, () -> T0);
         remoteContent = new HashMap<>();
     }
 
@@ -84,7 +83,7 @@ class LocalApplierTest {
         assertEquals("hello", Files.readString(target, StandardCharsets.UTF_8));
         assertEquals(T0.toEpochMilli(), Files.getLastModifiedTime(target).toMillis());
 
-        Item item = store.items().find(ROOT, PATH).orElseThrow();
+        Item item = store.items().find(GROUP, PATH).orElseThrow();
         assertEquals(ItemKind.FILE, item.kind());
         assertEquals(vector(NODE_B, 1), item.vector());
         assertNull(item.deletedAt());
@@ -108,7 +107,7 @@ class LocalApplierTest {
         Path target = syncRoot.resolve("docs/a.txt");
         assertEquals("two", Files.readString(target, StandardCharsets.UTF_8));
 
-        Item item = store.items().find(ROOT, PATH).orElseThrow();
+        Item item = store.items().find(GROUP, PATH).orElseThrow();
         assertEquals(vector(NODE_B, 2), item.vector());
         assertEquals(2, store.versions().recent(item.id(), 10).size());
     }
@@ -119,7 +118,7 @@ class LocalApplierTest {
         applier.applyRemote(directory(directory, vector(NODE_B, 1)), fetcher(), NODE_B);
 
         assertTrue(Files.isDirectory(syncRoot.resolve("docs")));
-        Item item = store.items().find(ROOT, directory).orElseThrow();
+        Item item = store.items().find(GROUP, directory).orElseThrow();
         assertEquals(ItemKind.DIRECTORY, item.kind());
         assertTrue(store.versions().recent(item.id(), 10).isEmpty());
     }
@@ -133,7 +132,7 @@ class LocalApplierTest {
         applier.applyRemote(tombstone(PATH, vector(NODE_B, 2)), fetcher(), NODE_B);
 
         assertFalse(Files.exists(syncRoot.resolve("docs/a.txt")));
-        Item item = store.items().find(ROOT, PATH).orElseThrow();
+        Item item = store.items().find(GROUP, PATH).orElseThrow();
         assertNotNull(item.deletedAt());
         assertTrue(store.tombstones().find(item.id()).isPresent());
     }
@@ -156,7 +155,7 @@ class LocalApplierTest {
         Path copy = onlyConflictCopy();
         assertEquals("local", Files.readString(copy, StandardCharsets.UTF_8));
 
-        Item copyItem = store.items().find(ROOT, LogicalPath.of("docs/" + copy.getFileName())).orElseThrow();
+        Item copyItem = store.items().find(GROUP, LogicalPath.of("docs/" + copy.getFileName())).orElseThrow();
         assertEquals(1, store.versions().recent(copyItem.id(), 10).size());
         assertEquals(1, store.conflicts().findOpen(10).size());
         assertNotNull(store.conflicts().findOpen(10).get(0).copyPath());
@@ -205,7 +204,7 @@ class LocalApplierTest {
         assertThrows(IOException.class, () -> applier.applyRemote(remoteEntry, broken, NODE_B));
 
         assertFalse(Files.exists(syncRoot.resolve("docs/a.txt")));
-        assertTrue(store.items().find(ROOT, PATH).isEmpty());
+        assertTrue(store.items().find(GROUP, PATH).isEmpty());
     }
 
     private void seedLocalFile(String content) throws Exception {

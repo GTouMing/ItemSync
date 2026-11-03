@@ -23,6 +23,7 @@ dependencies {
     implementation(project(":core-store"))
     implementation(project(":core-transport"))
     implementation(project(":platform-desktop"))
+    implementation(libs.gson)
     runtimeOnly(libs.sqlite.jdbc)
 
     testImplementation(libs.junit.jupiter)

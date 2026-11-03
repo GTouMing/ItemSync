@@ -1,10 +1,10 @@
 package github.gtouming.itemsync.sync.state;
 
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.BlobHash;
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.model.Conflict;
 import github.gtouming.itemsync.domain.model.Item;
 import github.gtouming.itemsync.domain.model.ItemKind;
@@ -43,8 +43,8 @@ class ConflictResolverTest {
     private static final NodeId NODE_A = NodeId.of("node-a");
     private static final NodeId NODE_B = NodeId.of("node-b");
     private static final DeviceId DEVICE = DeviceId.of("device-a");
-    private static final SyncRootId ROOT = SyncRootId.of("root-1");
     private static final LogicalPath PATH = LogicalPath.of("docs/a.txt");
+    private static final GroupId GROUP = GroupId.parse("group001");
 
     @TempDir
     Path temp;
@@ -58,13 +58,13 @@ class ConflictResolverTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        syncRoot = temp.resolve("root");
+        syncRoot = temp.resolve("GROUP");
         Files.createDirectories(syncRoot);
         blobs = new FileSystemBlobStore(temp.resolve("data"));
         store = JdbcMetadataStore.open("jdbc:sqlite:" + temp.resolve("metadata.db").toAbsolutePath());
         applier = new LocalApplier(syncRoot, store, blobs, PathResolvers.posix(),
-                ROOT, NODE_A, DEVICE, () -> T0);
-        resolver = new ConflictResolver(syncRoot, store, PathResolvers.posix(), ROOT, NODE_A,
+                GROUP, NODE_A, DEVICE, () -> T0);
+        resolver = new ConflictResolver(syncRoot, store, PathResolvers.posix(), GROUP, NODE_A,
                 () -> T0.plusSeconds(5));
         remoteContent = new HashMap<>();
     }
@@ -98,7 +98,7 @@ class ConflictResolverTest {
 
         Path target = syncRoot.resolve("docs/a.txt");
         assertEquals("local", Files.readString(target, StandardCharsets.UTF_8));
-        Item item = store.items().find(ROOT, PATH).orElseThrow();
+        Item item = store.items().find(GROUP, PATH).orElseThrow();
         assertEquals(VersionVector.of(Map.of(NODE_A, 2L, NODE_B, 1L)), item.vector());
         assertTrue(Files.exists(syncRoot.resolve(conflict.copyPath().value())));
         assertTrue(store.conflicts().findOpen(10).isEmpty());
@@ -135,7 +135,7 @@ class ConflictResolverTest {
         resolver.resolve(conflict.id(), ConflictResolver.Resolution.KEEP_REMOTE);
 
         assertFalse(Files.exists(syncRoot.resolve("docs/a.txt")));
-        Item item = store.items().find(ROOT, PATH).orElseThrow();
+        Item item = store.items().find(GROUP, PATH).orElseThrow();
         assertNotNull(item.deletedAt());
         assertTrue(store.tombstones().find(item.id()).isPresent());
         assertTrue(store.conflicts().findOpen(10).isEmpty());
@@ -149,7 +149,7 @@ class ConflictResolverTest {
 
         assertEquals("local", Files.readString(syncRoot.resolve("docs/a.txt"),
                 StandardCharsets.UTF_8));
-        Item item = store.items().find(ROOT, PATH).orElseThrow();
+        Item item = store.items().find(GROUP, PATH).orElseThrow();
         assertEquals(VersionVector.of(Map.of(NODE_A, 2L, NODE_B, 1L)), item.vector());
         assertTrue(store.conflicts().findOpen(10).isEmpty());
     }

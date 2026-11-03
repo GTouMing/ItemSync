@@ -43,6 +43,7 @@ android {
 dependencies {
     implementation(project(":core-sync"))
     implementation(project(":core-store"))
+    implementation(libs.gson)
 
     testImplementation(project(":core-store-testkit"))
     testImplementation(libs.junit4)

@@ -1,21 +1,20 @@
 package github.gtouming.itemsync.store.metadata;
 
 import github.gtouming.itemsync.domain.identity.ConflictId;
+import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.ItemId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.identity.SyncRunId;
 import github.gtouming.itemsync.domain.identity.TriggerId;
 import github.gtouming.itemsync.domain.identity.VersionId;
 import github.gtouming.itemsync.domain.model.Conflict;
 import github.gtouming.itemsync.domain.model.FileVersion;
-import github.gtouming.itemsync.domain.model.GroupMember;
+import github.gtouming.itemsync.domain.model.GroupDevice;
 import github.gtouming.itemsync.domain.model.Item;
 import github.gtouming.itemsync.domain.model.Peer;
 import github.gtouming.itemsync.domain.model.SyncGroup;
-import github.gtouming.itemsync.domain.model.SyncRoot;
 import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.Tombstone;
 import github.gtouming.itemsync.domain.model.Trigger;
@@ -33,7 +32,7 @@ public interface MetadataStore extends AutoCloseable {
 
     SyncGroupRepository groups();
 
-    SyncRootRepository roots();
+    GroupDeviceRepository devices();
 
     ItemRepository items();
 
@@ -69,28 +68,22 @@ public interface MetadataStore extends AutoCloseable {
 
         Optional<SyncGroup> find(GroupId id);
 
+        List<SyncGroup> findAll();
+
         void updateLogicalClock(GroupId id, long logicalClock);
 
-        void upsertMember(GroupMember member);
-
-        Optional<GroupMember> findMember(GroupId groupId, NodeId nodeId);
-
-        List<GroupMember> members(GroupId groupId);
-
-        void deleteMember(GroupId groupId, NodeId nodeId);
+        void delete(GroupId id);
     }
 
-    interface SyncRootRepository {
+    interface GroupDeviceRepository {
 
-        void insert(SyncRoot root);
+        void upsert(GroupDevice device);
 
-        Optional<SyncRoot> find(SyncRootId id);
+        Optional<GroupDevice> find(GroupId groupId, DeviceId deviceId);
 
-        List<SyncRoot> findByGroup(GroupId groupId);
+        List<GroupDevice> findByGroup(GroupId groupId);
 
-        void updateIgnoreSnapshot(SyncRootId id, String ignoreSnapshot);
-
-        void delete(SyncRootId id);
+        void delete(GroupId groupId, DeviceId deviceId);
     }
 
     interface ItemRepository {
@@ -103,15 +96,15 @@ public interface MetadataStore extends AutoCloseable {
 
         void upsert(Item item);
 
-        Optional<Item> find(SyncRootId rootId, LogicalPath path);
+        Optional<Item> find(GroupId groupId, LogicalPath path);
 
         Optional<Item> findById(ItemId id);
 
-        ItemPage page(SyncRootId rootId, String cursor, int limit);
+        ItemPage page(GroupId groupId, String cursor, int limit);
 
-        List<ChangedItem> changedSince(SyncRootId rootId, long sinceExclusive, long untilInclusive);
+        List<ChangedItem> changedSince(GroupId groupId, long sinceExclusive, long untilInclusive);
 
-        long currentSequence(SyncRootId rootId);
+        long currentSequence(GroupId groupId);
 
         void delete(ItemId id);
     }
@@ -172,17 +165,17 @@ public interface MetadataStore extends AutoCloseable {
 
         void update(SyncRun run);
 
-        List<SyncRun> recent(SyncRootId rootId, int limit);
+        List<SyncRun> recent(GroupId groupId, int limit);
     }
 
     interface CursorRepository {
 
-        long pullSequence(SyncRootId rootId, NodeId peerNodeId);
+        long pullSequence(GroupId groupId, NodeId peerNodeId);
 
-        void updatePull(SyncRootId rootId, NodeId peerNodeId, long sequence);
+        void updatePull(GroupId groupId, NodeId peerNodeId, long sequence);
 
-        long pushSequence(SyncRootId rootId, NodeId peerNodeId);
+        long pushSequence(GroupId groupId, NodeId peerNodeId);
 
-        void updatePush(SyncRootId rootId, NodeId peerNodeId, long sequence);
+        void updatePush(GroupId groupId, NodeId peerNodeId, long sequence);
     }
 }

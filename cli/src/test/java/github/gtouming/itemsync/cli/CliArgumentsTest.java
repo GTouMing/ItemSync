@@ -39,6 +39,17 @@ class CliArgumentsTest {
     }
 
     @Test
+    void parsesPositionalsAndBooleanFlags() {
+        CliArguments arguments = CliArguments.parse(new String[] {
+                "config", "set", "group", "group002", "--yes", "--json"});
+
+        assertEquals(List.of("set", "group", "group002"), arguments.positionals());
+        assertEquals(true, arguments.flag("yes"));
+        assertEquals(true, arguments.flag("json"));
+        assertEquals(false, arguments.flag("missing"));
+    }
+
+    @Test
     void rejectsMissingValue() {
         assertThrows(IllegalArgumentException.class,
                 () -> CliArguments.parse(new String[] {"serve", "--data"}));

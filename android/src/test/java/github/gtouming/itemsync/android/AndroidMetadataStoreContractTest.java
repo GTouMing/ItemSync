@@ -2,6 +2,7 @@ package github.gtouming.itemsync.android;
 
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.model.SyncGroup;
+import github.gtouming.itemsync.domain.model.SyncRoot;
 import github.gtouming.itemsync.store.metadata.MetadataStoreConformance;
 import org.junit.After;
 import org.junit.Before;
@@ -54,13 +55,13 @@ public class AndroidMetadataStoreContractTest {
     }
 
     @Test
-    public void managesGroupMembers() {
-        conformance.managesGroupMembers();
+    public void managesGroupDevices() {
+        conformance.managesGroupDevices();
     }
 
     @Test
-    public void storesRootsPerGroup() {
-        conformance.storesRootsPerGroup();
+    public void storesGroupRootAndListsGroups() {
+        conformance.storesGroupRootAndListsGroups();
     }
 
     @Test
@@ -81,6 +82,11 @@ public class AndroidMetadataStoreContractTest {
     @Test
     public void advancesItemChangeSequenceAndReturnsOnlyChangedItems() {
         conformance.advancesItemChangeSequenceAndReturnsOnlyChangedItems();
+    }
+
+    @Test
+    public void keepsChangeSequencesIsolatedPerGroup() {
+        conformance.keepsChangeSequencesIsolatedPerGroup();
     }
 
     @Test
@@ -150,7 +156,8 @@ public class AndroidMetadataStoreContractTest {
         AndroidSqliteMetadataStore first = new AndroidSqliteMetadataStore(
                 RuntimeEnvironment.getApplication(), "reopen.db");
         try {
-            first.groups().insert(new SyncGroup(groupId, "Home", 7, T0));
+            first.groups().insert(new SyncGroup(groupId, "Home",
+                    new SyncRoot("C:\\Docs", "Docs", null), 7, T0));
         } finally {
             first.close();
         }

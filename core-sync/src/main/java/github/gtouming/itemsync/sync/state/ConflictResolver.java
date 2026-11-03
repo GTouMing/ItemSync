@@ -4,9 +4,9 @@ import github.gtouming.itemsync.domain.compat.Compat;
 
 import github.gtouming.itemsync.domain.identity.BlobHash;
 import github.gtouming.itemsync.domain.identity.ConflictId;
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.identity.VersionId;
 import github.gtouming.itemsync.domain.model.Conflict;
 import github.gtouming.itemsync.domain.model.FileVersion;
@@ -49,13 +49,13 @@ public final class ConflictResolver {
     private final LocalStateWriter writer;
 
     public ConflictResolver(Path syncRoot, MetadataStore store, PhysicalPathResolver paths,
-                            SyncRootId rootId, NodeId localNode, Supplier<Instant> clock) {
+                            GroupId groupId, NodeId localNode, Supplier<Instant> clock) {
         this.syncRoot = Objects.requireNonNull(syncRoot, "syncRoot");
         this.store = Objects.requireNonNull(store, "store");
         this.paths = Objects.requireNonNull(paths, "paths");
         this.localNode = Objects.requireNonNull(localNode, "localNode");
         this.clock = Objects.requireNonNull(clock, "clock");
-        this.writer = new LocalStateWriter(store, rootId, clock);
+        this.writer = new LocalStateWriter(store, groupId, clock);
     }
 
     public List<ConflictView> open(int limit) {
