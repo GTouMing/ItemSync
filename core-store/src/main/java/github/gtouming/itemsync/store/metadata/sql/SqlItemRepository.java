@@ -2,10 +2,10 @@ package github.gtouming.itemsync.store.metadata.sql;
 
 import github.gtouming.itemsync.domain.compat.Compat;
 
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.ItemId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.identity.VersionId;
 import github.gtouming.itemsync.domain.model.Item;
 import github.gtouming.itemsync.domain.model.ItemKind;
@@ -22,7 +22,7 @@ import java.util.Optional;
 final class SqlItemRepository implements ItemRepository {
 
     private static final String COLUMNS =
-            "id, root_id, logical_path, kind, current_version_id, deleted_at";
+            "id, group_id, logical_path, kind, current_version_id, deleted_at";
 
     private final SqlSession session;
 
@@ -34,19 +34,19 @@ final class SqlItemRepository implements ItemRepository {
     public void upsert(Item item) {
         session.runAtomically(() -> {
             session.update("INSERT OR REPLACE INTO item(" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?)",
-                    item.id().value(), item.rootId().value(), item.logicalPath().value(), item.kind().name(),
+                    item.id().value(), item.groupId().value(), item.logicalPath().value(), item.kind().name(),
                     item.currentVersion() == null ? null : item.currentVersion().value(), item.deletedAt());
-            replaceVector(item.rootId(), item.logicalPath(), item.vector());
-            session.update("INSERT OR REPLACE INTO item_change(root_id, logical_path) VALUES (?, ?)",
-                    item.rootId().value(), item.logicalPath().value());
+            replaceVector(item.groupId(), item.logicalPath(), item.vector());
+            session.update("INSERT OR REPLACE INTO item_change(group_id, logical_path) VALUES (?, ?)",
+                    item.groupId().value(), item.logicalPath().value());
         });
     }
 
     @Override
-    public Optional<Item> find(SyncRootId rootId, LogicalPath path) {
-        return session.queryOne("SELECT " + COLUMNS + " FROM item WHERE root_id = ? AND logical_path = ?",
-                        SqlItemRepository::mapRow, rootId.value(), path.value())
-                .map(row -> row.toItem(loadVector(rootId, path)));
+    public Optional<Item> find(GroupId groupId, LogicalPath path) {
+        return session.queryOne("SELECT " + COLUMNS + " FROM item WHERE group_id = ? AND logical_path = ?",
+                        SqlItemRepository::mapRow, groupId.value(), path.value())
+                .map(row -> row.toItem(loadVector(groupId, path)));
     }
 
     @Override
@@ -54,25 +54,25 @@ final class SqlItemRepository implements ItemRepository {
         return session.queryOne("SELECT " + COLUMNS + " FROM item WHERE id = ?",
                         SqlItemRepository::mapRow, id.value())
                 .map(row -> row.toItem(loadVector(
-                        SyncRootId.of(row.rootId()), LogicalPath.of(row.logicalPath()))));
+                        GroupId.parse(row.groupId()), LogicalPath.of(row.logicalPath()))));
     }
 
     @Override
-    public ItemPage page(SyncRootId rootId, String cursor, int limit) {
+    public ItemPage page(GroupId groupId, String cursor, int limit) {
         if (limit <= 0) {
             throw new IllegalArgumentException("limit must be positive, got " + limit);
         }
         boolean hasCursor = cursor != null;
-        String sql = "SELECT i.id, i.root_id, i.logical_path, i.kind, i.current_version_id, i.deleted_at, "
+        String sql = "SELECT i.id, i.group_id, i.logical_path, i.kind, i.current_version_id, i.deleted_at, "
                 + "v.node_id AS vector_node_id, v.counter AS vector_counter "
-                + "FROM (SELECT " + COLUMNS + " FROM item WHERE root_id = ?"
+                + "FROM (SELECT " + COLUMNS + " FROM item WHERE group_id = ?"
                 + (hasCursor ? " AND logical_path > ?" : "")
                 + " ORDER BY logical_path LIMIT ?) i "
-                + "LEFT JOIN item_vector v ON v.root_id = i.root_id AND v.logical_path = i.logical_path "
+                + "LEFT JOIN item_vector v ON v.group_id = i.group_id AND v.logical_path = i.logical_path "
                 + "ORDER BY i.logical_path, v.node_id";
 
         List<Object> arguments = new ArrayList<>();
-        arguments.add(rootId.value());
+        arguments.add(groupId.value());
         if (hasCursor) {
             arguments.add(cursor);
         }
@@ -90,65 +90,65 @@ final class SqlItemRepository implements ItemRepository {
     }
 
     @Override
-    public List<ChangedItem> changedSince(SyncRootId rootId, long sinceExclusive, long untilInclusive) {
+    public List<ChangedItem> changedSince(GroupId groupId, long sinceExclusive, long untilInclusive) {
         if (sinceExclusive < 0) {
             throw new IllegalArgumentException("sinceExclusive must not be negative");
         }
-        String sql = "SELECT i.id, i.root_id, i.logical_path, i.kind, i.current_version_id, i.deleted_at, "
+        String sql = "SELECT i.id, i.group_id, i.logical_path, i.kind, i.current_version_id, i.deleted_at, "
                 + "c.seq AS change_seq, "
                 + "v.node_id AS vector_node_id, v.counter AS vector_counter "
                 + "FROM item_change c "
-                + "JOIN item i ON i.root_id = c.root_id AND i.logical_path = c.logical_path "
-                + "LEFT JOIN item_vector v ON v.root_id = i.root_id AND v.logical_path = i.logical_path "
-                + "WHERE c.root_id = ? AND c.seq > ? AND c.seq <= ? "
+                + "JOIN item i ON i.group_id = c.group_id AND i.logical_path = c.logical_path "
+                + "LEFT JOIN item_vector v ON v.group_id = i.group_id AND v.logical_path = i.logical_path "
+                + "WHERE c.group_id = ? AND c.seq > ? AND c.seq <= ? "
                 + "ORDER BY c.seq, v.node_id";
 
         List<ChangedItem> items = new ArrayList<>();
         ChangedItemAccumulator accumulator = new ChangedItemAccumulator(items);
         session.queryEach(sql, accumulator::accept,
-                rootId.value(), sinceExclusive, untilInclusive);
+                groupId.value(), sinceExclusive, untilInclusive);
         accumulator.finish();
         return Compat.copyList(items);
     }
 
     @Override
-    public long currentSequence(SyncRootId rootId) {
+    public long currentSequence(GroupId groupId) {
         return session.queryOne(
-                "SELECT COALESCE(MAX(seq), 0) AS max_seq FROM item_change WHERE root_id = ?",
+                "SELECT COALESCE(MAX(seq), 0) AS max_seq FROM item_change WHERE group_id = ?",
                 cursor -> cursor.getLong("max_seq"),
-                rootId.value()).orElse(0L);
+                groupId.value()).orElse(0L);
     }
 
     @Override
     public void delete(ItemId id) {
         session.runAtomically(() -> {
             Optional<String[]> keys = session.queryOne(
-                    "SELECT root_id, logical_path FROM item WHERE id = ?",
-                    cursor -> new String[] {cursor.getString("root_id"), cursor.getString("logical_path")},
+                    "SELECT group_id, logical_path FROM item WHERE id = ?",
+                    cursor -> new String[] {cursor.getString("group_id"), cursor.getString("logical_path")},
                     id.value());
             if (keys.isEmpty()) {
                 return;
             }
-            session.update("DELETE FROM item_vector WHERE root_id = ? AND logical_path = ?",
+            session.update("DELETE FROM item_vector WHERE group_id = ? AND logical_path = ?",
                     keys.get()[0], keys.get()[1]);
             session.update("DELETE FROM item WHERE id = ?", id.value());
         });
     }
 
-    private void replaceVector(SyncRootId rootId, LogicalPath path, VersionVector vector) {
-        session.update("DELETE FROM item_vector WHERE root_id = ? AND logical_path = ?",
-                rootId.value(), path.value());
+    private void replaceVector(GroupId groupId, LogicalPath path, VersionVector vector) {
+        session.update("DELETE FROM item_vector WHERE group_id = ? AND logical_path = ?",
+                groupId.value(), path.value());
         for (NodeId node : vector.nodes()) {
-            session.update("INSERT INTO item_vector(root_id, logical_path, node_id, counter) VALUES (?, ?, ?, ?)",
-                    rootId.value(), path.value(), node.value(), vector.counterOf(node));
+            session.update("INSERT INTO item_vector(group_id, logical_path, node_id, counter) VALUES (?, ?, ?, ?)",
+                    groupId.value(), path.value(), node.value(), vector.counterOf(node));
         }
     }
 
-    private VersionVector loadVector(SyncRootId rootId, LogicalPath path) {
+    private VersionVector loadVector(GroupId groupId, LogicalPath path) {
         List<Map.Entry<NodeId, Long>> counters = session.query(
-                "SELECT node_id, counter FROM item_vector WHERE root_id = ? AND logical_path = ?",
+                "SELECT node_id, counter FROM item_vector WHERE group_id = ? AND logical_path = ?",
                 cursor -> Map.entry(NodeId.of(cursor.getString("node_id")), cursor.getLong("counter")),
-                rootId.value(), path.value());
+                groupId.value(), path.value());
         if (counters.isEmpty()) {
             return VersionVector.empty();
         }
@@ -162,20 +162,20 @@ final class SqlItemRepository implements ItemRepository {
     private static ItemRow mapRow(RowCursor cursor) {
         return new ItemRow(
                 cursor.getString("id"),
-                cursor.getString("root_id"),
+                cursor.getString("group_id"),
                 cursor.getString("logical_path"),
                 cursor.getString("kind"),
                 cursor.getString("current_version_id"),
                 SqlValues.instant(cursor, "deleted_at"));
     }
 
-    private record ItemRow(String id, String rootId, String logicalPath, String kind,
+    private record ItemRow(String id, String groupId, String logicalPath, String kind,
                            String currentVersionId, Instant deletedAt) {
 
         Item toItem(VersionVector vector) {
             return new Item(
                     ItemId.of(id),
-                    SyncRootId.of(rootId),
+                    GroupId.parse(groupId),
                     LogicalPath.of(logicalPath),
                     ItemKind.valueOf(kind),
                     currentVersionId == null ? null : VersionId.of(currentVersionId),

@@ -1,7 +1,6 @@
 package github.gtouming.itemsync.cli;
 
 import github.gtouming.itemsync.domain.identity.GroupId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.platform.desktop.DesktopConfig;
 import github.gtouming.itemsync.sync.trust.FileTrustStore;
 import org.junit.jupiter.api.Test;
@@ -28,7 +27,7 @@ class CliAdminDesktopTest {
         Path data = Files.createDirectories(temp.resolve("data"));
         Path root = Files.createDirectories(temp.resolve("root"));
         DesktopConfig.create(data, root, GroupId.parse("group001"),
-                SyncRootId.of("root-1"), 47999, "", Duration.ofSeconds(30));
+                47999, "", Duration.ofSeconds(30));
         FileTrustStore trust = new FileTrustStore(data);
         String fingerprint = "a".repeat(64);
         trust.trust(GroupId.parse("group001"), fingerprint);

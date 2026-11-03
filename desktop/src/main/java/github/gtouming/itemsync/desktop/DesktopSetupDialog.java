@@ -1,7 +1,6 @@
 package github.gtouming.itemsync.desktop;
 
 import github.gtouming.itemsync.domain.identity.GroupId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.platform.desktop.DesktopConfig;
 import github.gtouming.itemsync.platform.desktop.PathSupport;
 import javafx.event.ActionEvent;
@@ -58,7 +57,6 @@ public final class DesktopSetupDialog {
         HBox.setHgrow(rootField, Priority.ALWAYS);
 
         TextField groupField = new TextField(GroupId.random().value());
-        TextField rootIdField = new TextField("root-1");
         TextField portField = new TextField("47800");
 
         Label hint = new Label("本机密码已单独设置；身份由 Windows DPAPI 中的 NUK 静默解锁。\n"
@@ -74,8 +72,7 @@ public final class DesktopSetupDialog {
         grid.setVgap(8);
         grid.addRow(0, new Label("同步根"), rootBox);
         grid.addRow(1, new Label("组 ID"), groupField);
-        grid.addRow(2, new Label("同步根 ID"), rootIdField);
-        grid.addRow(3, new Label("端口"), portField);
+        grid.addRow(2, new Label("端口"), portField);
 
         VBox content = new VBox(12, grid, hint, errorLabel);
         content.setPadding(new Insets(10));
@@ -91,9 +88,8 @@ public final class DesktopSetupDialog {
             try {
                 Path root = PathSupport.expandUser(rootField.getText()).toAbsolutePath();
                 GroupId group = GroupId.parse(groupField.getText().trim());
-                SyncRootId rootId = SyncRootId.of(rootIdField.getText().trim());
                 int port = Integer.parseInt(portField.getText().trim());
-                DesktopConfig.create(dataDir, root, group, rootId, port, "",
+                DesktopConfig.create(dataDir, root, group, port, "",
                         Duration.ofSeconds(30));
             } catch (Exception e) {
                 errorLabel.setText(e.getMessage());

@@ -3,8 +3,8 @@ package github.gtouming.itemsync.sync.engine.transport;
 import github.gtouming.itemsync.domain.compat.Compat;
 
 import github.gtouming.itemsync.domain.identity.BlobHash;
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.model.ManifestEntry;
 import github.gtouming.itemsync.domain.replication.VersionVector;
 import github.gtouming.itemsync.sync.engine.RemotePeer;
@@ -98,7 +98,7 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
     }
 
     @Override
-    public ManifestSnapshot manifest(SyncRootId rootId, long sinceSequence) throws IOException {
+    public ManifestSnapshot manifest(GroupId groupId, long sinceSequence) throws IOException {
         ManifestCollector collector = new ManifestCollector(timeout);
         synchronized (manifestLock) {
             if (manifestCollector != null) {
@@ -109,7 +109,7 @@ public final class TlsRemotePeer implements RemotePeer, FrameHandler, AutoClosea
         try {
             connection().send(new Frame(FrameType.MANIFEST_REQUEST,
                     FramePayloads.encodeManifestRequest(new ManifestRequest(
-                            rootId, VersionVector.empty(), sinceSequence, null))));
+                            groupId, VersionVector.empty(), sinceSequence, null))));
             return collector.await();
         } finally {
             synchronized (manifestLock) {

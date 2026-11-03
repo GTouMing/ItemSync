@@ -44,13 +44,13 @@ public abstract class MetadataStoreContract {
     }
 
     @Test
-    void managesGroupMembers() {
-        conformance.managesGroupMembers();
+    void managesGroupDevices() {
+        conformance.managesGroupDevices();
     }
 
     @Test
-    void storesRootsPerGroup() {
-        conformance.storesRootsPerGroup();
+    void storesGroupRootAndListsGroups() {
+        conformance.storesGroupRootAndListsGroups();
     }
 
     @Test
@@ -71,6 +71,11 @@ public abstract class MetadataStoreContract {
     @Test
     void advancesItemChangeSequenceAndReturnsOnlyChangedItems() {
         conformance.advancesItemChangeSequenceAndReturnsOnlyChangedItems();
+    }
+
+    @Test
+    void keepsChangeSequencesIsolatedPerGroup() {
+        conformance.keepsChangeSequencesIsolatedPerGroup();
     }
 
     @Test

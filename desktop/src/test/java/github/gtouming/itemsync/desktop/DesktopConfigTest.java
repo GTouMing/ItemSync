@@ -1,7 +1,6 @@
 package github.gtouming.itemsync.desktop;
 
 import github.gtouming.itemsync.domain.identity.GroupId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.platform.desktop.DesktopConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -41,7 +40,6 @@ class DesktopConfigTest {
 
         assertEquals(root.toAbsolutePath(), config.root());
         assertEquals("group001", config.group().value());
-        assertEquals("root-1", config.rootId().value());
         assertEquals(47800, config.port());
         assertEquals("C:\\Apps\\ItemSync.exe", config.launchCommand());
         assertEquals(5, config.debounce().toSeconds());
@@ -62,8 +60,7 @@ class DesktopConfigTest {
     void createsAndReloadsConfiguration() throws Exception {
         Path root = temp.resolve("root");
         DesktopConfig config = DesktopConfig.create(temp, root, GroupId.random(),
-                SyncRootId.of("root-1"), 47900, "C:\\Apps\\ItemSync.exe",
-                Duration.ofSeconds(10));
+                47900, "C:\\Apps\\ItemSync.exe", Duration.ofSeconds(10));
 
         assertEquals(root.toAbsolutePath(), config.root());
         assertEquals(47900, config.port());
@@ -74,14 +71,14 @@ class DesktopConfigTest {
     @Test
     void createRejectsDataDirectoryInsideRoot() {
         assertThrows(IllegalArgumentException.class, () -> DesktopConfig.create(temp, temp,
-                GroupId.random(), SyncRootId.of("root-1"), 47800, "", Duration.ofSeconds(30)));
+                GroupId.random(), 47800, "", Duration.ofSeconds(30)));
     }
 
     @Test
     void changingGroupPreservesRootPortAndLaunchCommand() throws Exception {
         Path root = temp.resolve("root");
         DesktopConfig created = DesktopConfig.create(temp, root, GroupId.parse("group001"),
-                SyncRootId.of("root-1"), 47900, "C:\\Apps\\ItemSync.exe", Duration.ofSeconds(10));
+                47900, "C:\\Apps\\ItemSync.exe", Duration.ofSeconds(10));
 
         DesktopConfig changed = DesktopConfig.changeGroup(temp, GroupId.parse("group002"));
 
@@ -117,7 +114,7 @@ class DesktopConfigTest {
     @Test
     void createDoesNotWriteLegacyKeys() throws Exception {
         DesktopConfig.create(temp, temp.resolve("root"), GroupId.random(),
-                SyncRootId.of("root-1"), 47900, "", Duration.ofSeconds(10));
+                47900, "", Duration.ofSeconds(10));
 
         Properties properties = new Properties();
         try (Reader reader = Files.newBufferedReader(temp.resolve(DesktopConfig.FILE_NAME))) {

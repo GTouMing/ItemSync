@@ -17,7 +17,6 @@ import github.gtouming.itemsync.domain.compat.Compat;
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.sync.apply.PathResolvers;
 import github.gtouming.itemsync.sync.engine.SyncRunResult;
@@ -172,7 +171,7 @@ public final class SyncForegroundService extends Service {
 
             store = new AndroidSqliteMetadataStore(this, "itemsync.sqlite");
             InetAddress discoveryAddress = preferredDiscoveryAddress();
-            node = new SyncNode(nodeId, group, SyncRootId.of(config.rootId()), root, store,
+            node = new SyncNode(nodeId, group, root, store,
                     new FileSystemBlobStore(new File(getFilesDir(), "data").toPath()),
                     PathResolvers.posix(), identity, deviceId, Compat.set("none"),
                     config.port(), new File(getCacheDir(), "transfer").toPath(),

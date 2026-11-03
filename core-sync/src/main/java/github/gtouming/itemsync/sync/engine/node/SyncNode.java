@@ -6,7 +6,6 @@ import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.identity.SyncRunId;
 import github.gtouming.itemsync.domain.model.ManifestEntry;
 import github.gtouming.itemsync.domain.replication.LogicalClock;
@@ -68,7 +67,6 @@ public final class SyncNode implements AutoCloseable {
 
     private final NodeId nodeId;
     private final GroupId groupId;
-    private final SyncRootId rootId;
     private final TlsIdentity identity;
     private final Path transferTempDir;
     private final MetadataStore store;
@@ -99,32 +97,32 @@ public final class SyncNode implements AutoCloseable {
     private volatile IOException lastError;
     private volatile String lastRejectedFingerprint;
 
-    public SyncNode(NodeId nodeId, GroupId groupId, SyncRootId rootId, Path syncRoot,
+    public SyncNode(NodeId nodeId, GroupId groupId, Path syncRoot,
                     MetadataStore store, BlobStore blobs, PhysicalPathResolver paths,
                     TlsIdentity identity, DeviceId deviceId, String expectedClientFingerprint,
                     int port, Path transferTempDir) throws IOException {
-        this(nodeId, groupId, rootId, syncRoot, store, blobs, paths, identity, deviceId,
+        this(nodeId, groupId, syncRoot, store, blobs, paths, identity, deviceId,
                 Compat.set(expectedClientFingerprint), port, transferTempDir);
     }
 
-    public SyncNode(NodeId nodeId, GroupId groupId, SyncRootId rootId, Path syncRoot,
+    public SyncNode(NodeId nodeId, GroupId groupId, Path syncRoot,
                     MetadataStore store, BlobStore blobs, PhysicalPathResolver paths,
                     TlsIdentity identity, DeviceId deviceId, Set<String> expectedClientFingerprints,
                     int port, Path transferTempDir) throws IOException {
-        this(nodeId, groupId, rootId, syncRoot, store, blobs, paths, identity, deviceId,
+        this(nodeId, groupId, syncRoot, store, blobs, paths, identity, deviceId,
                 expectedClientFingerprints, port, transferTempDir, null);
     }
 
-    public SyncNode(NodeId nodeId, GroupId groupId, SyncRootId rootId, Path syncRoot,
+    public SyncNode(NodeId nodeId, GroupId groupId, Path syncRoot,
                     MetadataStore store, BlobStore blobs, PhysicalPathResolver paths,
                     TlsIdentity identity, DeviceId deviceId, Set<String> expectedClientFingerprints,
                     int port, Path transferTempDir, PairingTrustProvider pairingTrust)
             throws IOException {
-        this(nodeId, groupId, rootId, syncRoot, store, blobs, paths, identity, deviceId,
+        this(nodeId, groupId, syncRoot, store, blobs, paths, identity, deviceId,
                 expectedClientFingerprints, port, transferTempDir, pairingTrust, null);
     }
 
-    public SyncNode(NodeId nodeId, GroupId groupId, SyncRootId rootId, Path syncRoot,
+    public SyncNode(NodeId nodeId, GroupId groupId, Path syncRoot,
                     MetadataStore store, BlobStore blobs, PhysicalPathResolver paths,
                     TlsIdentity identity, DeviceId deviceId, Set<String> expectedClientFingerprints,
                     int port, Path transferTempDir, PairingTrustProvider pairingTrust,
@@ -132,7 +130,6 @@ public final class SyncNode implements AutoCloseable {
             throws IOException {
         this.nodeId = Objects.requireNonNull(nodeId, "nodeId");
         this.groupId = Objects.requireNonNull(groupId, "groupId");
-        this.rootId = Objects.requireNonNull(rootId, "rootId");
         this.identity = Objects.requireNonNull(identity, "identity");
         Objects.requireNonNull(syncRoot, "syncRoot");
         this.store = Objects.requireNonNull(store, "store");
@@ -146,11 +143,11 @@ public final class SyncNode implements AutoCloseable {
         Path tempDir = Objects.requireNonNull(transferTempDir, "transferTempDir");
         Files.createDirectories(tempDir);
 
-        this.reconciler = new LocalReconciler(syncRoot, store, blobs, rootId, nodeId, paths, Instant::now);
-        LocalApplier applier = new LocalApplier(syncRoot, store, blobs, paths, rootId, nodeId,
+        this.reconciler = new LocalReconciler(syncRoot, store, blobs, groupId, nodeId, paths, Instant::now);
+        LocalApplier applier = new LocalApplier(syncRoot, store, blobs, paths, groupId, nodeId,
                 deviceId, Instant::now);
         this.engine = new SyncEngine(reconciler, applier, new SyncPlanner(), store.cursors());
-        this.remoteSyncServer = new RemoteSyncServer(rootId,
+        this.remoteSyncServer = new RemoteSyncServer(groupId,
                 (requestedRoot, sinceSequence) -> manifestSnapshot(sinceSequence),
                 BlobSources.of(blobs));
         reconciler.reconcile();
@@ -285,7 +282,7 @@ public final class SyncNode implements AutoCloseable {
         syncLock.lock();
         try {
             reconcileLocal();
-            long localSequence = store.items().currentSequence(rootId);
+            long localSequence = store.items().currentSequence(groupId);
             for (PeerLink link : Compat.copyList(peers.values())) {
                 notifyIfNeeded(link, localSequence);
             }
@@ -298,7 +295,7 @@ public final class SyncNode implements AutoCloseable {
         syncLock.lock();
         try {
             reconcileLocal();
-            long localSequence = store.items().currentSequence(rootId);
+            long localSequence = store.items().currentSequence(groupId);
             Map<PeerLink, SyncRunResult> results = new LinkedHashMap<>();
             for (PeerLink link : Compat.copyList(peers.values())) {
                 results.put(link, engine.pullOnce(link.remote));
@@ -383,7 +380,7 @@ public final class SyncNode implements AutoCloseable {
             return;
         }
         PeerLink link = peersByFingerprint.get(connection.peerFingerprint());
-        boolean accepted = link != null && notify.rootId().equals(rootId);
+        boolean accepted = link != null && notify.groupId().equals(groupId);
         sendAck(connection, notify.runId(), accepted, accepted ? 0 : -1);
         if (!accepted) {
             return;
@@ -395,7 +392,7 @@ public final class SyncNode implements AutoCloseable {
         syncLock.lock();
         try {
             reconcileLocal();
-            long localSequence = store.items().currentSequence(rootId);
+            long localSequence = store.items().currentSequence(groupId);
             engine.pullOnce(link.remote);
             reconcileLocal();
             notifyIfNeeded(link, localSequence);
@@ -440,7 +437,7 @@ public final class SyncNode implements AutoCloseable {
     private void refreshManifestCache() {
         manifestLock.writeLock().lock();
         try {
-            long current = store.items().currentSequence(rootId);
+            long current = store.items().currentSequence(groupId);
             long since = manifestSequence;
             if (current < since) {
                 manifestEntries.clear();
@@ -448,7 +445,7 @@ public final class SyncNode implements AutoCloseable {
             }
             if (current > since) {
                 for (MetadataStore.ItemRepository.ChangedItem changed
-                        : store.items().changedSince(rootId, since, current)) {
+                        : store.items().changedSince(groupId, since, current)) {
                     ManifestEntry entry = reconciler.toEntry(changed.item());
                     if (entry == null) {
                         manifestEntries.remove(changed.item().logicalPath());
@@ -468,18 +465,18 @@ public final class SyncNode implements AutoCloseable {
     }
 
     private void notifyIfNeeded(PeerLink link, long localSequence) {
-        if (localSequence <= store.cursors().pushSequence(rootId, link.nodeId)) {
+        if (localSequence <= store.cursors().pushSequence(groupId, link.nodeId)) {
             return;
         }
         if (sendNotify(link)) {
-            store.cursors().updatePush(rootId, link.nodeId, localSequence);
+            store.cursors().updatePush(groupId, link.nodeId, localSequence);
         }
     }
 
     private boolean sendNotify(PeerLink link) {
         try {
             link.remote.send(new Frame(FrameType.NOTIFY, FramePayloads.encodeNotify(new Notify(
-                    new SyncRunId(UUID.randomUUID().toString()), groupId, nextClock(), rootId,
+                    new SyncRunId(UUID.randomUUID().toString()), groupId, nextClock(),
                     VersionVector.empty()))));
             return true;
         } catch (IOException e) {

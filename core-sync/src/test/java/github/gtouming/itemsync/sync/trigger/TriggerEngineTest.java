@@ -3,7 +3,6 @@ package github.gtouming.itemsync.sync.trigger;
 import github.gtouming.itemsync.domain.error.ErrorCode;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.identity.TriggerId;
 import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.SyncRunState;
@@ -32,7 +31,6 @@ class TriggerEngineTest {
 
     private static final Instant T0 = Instant.parse("2026-01-01T00:00:00Z");
     private static final GroupId GROUP = GroupId.parse("group001");
-    private static final SyncRootId ROOT = SyncRootId.of("root-1");
     private static final NodeId NODE = NodeId.of("node-a");
     private static final TriggerId TRIGGER = TriggerId.of("trig-1");
 
@@ -72,7 +70,7 @@ class TriggerEngineTest {
             Thread.sleep(150);
             assertEquals(1, runs.get());
 
-            List<SyncRun> recorded = store.runs().recent(ROOT, 10);
+            List<SyncRun> recorded = store.runs().recent(GROUP, 10);
             assertEquals(1, recorded.size());
             assertEquals(SyncRunState.COMPLETED, recorded.get(0).state());
             assertEquals(TRIGGER, recorded.get(0).triggerId());
@@ -93,7 +91,7 @@ class TriggerEngineTest {
 
             engine.executeNow(TRIGGER);
 
-            SyncRun run = store.runs().recent(ROOT, 1).get(0);
+            SyncRun run = store.runs().recent(GROUP, 1).get(0);
             assertEquals(SyncRunState.FAILED, run.state());
             assertEquals(ErrorCode.SYNC_RUN_FAILED, run.errorCode());
         }
@@ -119,12 +117,12 @@ class TriggerEngineTest {
     }
 
     private TriggerEngine engine(TriggerEngine.SyncRunner runner, Duration debounce) {
-        return new TriggerEngine(store, GROUP, ROOT, NODE, runner, work -> work.run(),
+        return new TriggerEngine(store, GROUP, NODE, runner, work -> work.run(),
                 () -> T0, debounce);
     }
 
     private static Trigger directoryTrigger() {
-        return new Trigger(TRIGGER, GROUP, ROOT, TriggerType.CONDITION,
+        return new Trigger(TRIGGER, GROUP, TriggerType.CONDITION,
                 TriggerConfigCodec.encode(new TriggerConfig.DirectoryChange()), true, null);
     }
 

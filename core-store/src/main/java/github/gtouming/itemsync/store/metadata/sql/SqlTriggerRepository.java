@@ -1,7 +1,6 @@
 package github.gtouming.itemsync.store.metadata.sql;
 
 import github.gtouming.itemsync.domain.identity.GroupId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.identity.TriggerId;
 import github.gtouming.itemsync.domain.model.Trigger;
 import github.gtouming.itemsync.domain.model.TriggerType;
@@ -14,7 +13,7 @@ import java.util.Optional;
 final class SqlTriggerRepository implements TriggerRepository {
 
     private static final String COLUMNS =
-            "id, group_id, root_id, type, config_json, enabled, next_fire_at";
+            "id, group_id, type, config_json, enabled, next_fire_at";
 
     private final SqlSession session;
 
@@ -24,10 +23,9 @@ final class SqlTriggerRepository implements TriggerRepository {
 
     @Override
     public void upsert(Trigger trigger) {
-        session.update("INSERT OR REPLACE INTO trigger(" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+        session.update("INSERT OR REPLACE INTO trigger(" + COLUMNS + ") VALUES (?, ?, ?, ?, ?, ?)",
                 trigger.id().value(),
                 trigger.groupId().value(),
-                trigger.rootId().value(),
                 trigger.type().name(),
                 trigger.configJson(),
                 trigger.enabled(),
@@ -66,7 +64,6 @@ final class SqlTriggerRepository implements TriggerRepository {
         return new Trigger(
                 TriggerId.of(cursor.getString("id")),
                 GroupId.parse(cursor.getString("group_id")),
-                SyncRootId.of(cursor.getString("root_id")),
                 SqlValues.enumValue(cursor, "type", TriggerType.class),
                 cursor.getString("config_json"),
                 cursor.getInt("enabled") != 0,

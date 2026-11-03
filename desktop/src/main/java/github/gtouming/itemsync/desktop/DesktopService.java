@@ -89,7 +89,7 @@ public final class DesktopService implements AutoCloseable {
         Set<String> acceptedClients = Set.of("none");
         SyncNode node;
         try {
-            node = new SyncNode(nodeId, config.group(), config.rootId(), config.root(), store,
+            node = new SyncNode(nodeId, config.group(), config.root(), store,
                     blobs, physical, identity, deviceId,
                     acceptedClients, config.port(),
                     config.dataDir().resolve("transfer"), trustStore::isTrusted);
@@ -101,11 +101,11 @@ public final class DesktopService implements AutoCloseable {
                 config.group(), identity, node, trustStore);
 
         ConflictResolver conflictResolver = new ConflictResolver(config.root(), store, physical,
-                config.rootId(), nodeId, Instant::now);
+                config.group(), nodeId, Instant::now);
         VersionHistoryService history = new VersionHistoryService(config.root(), store, blobs,
-                physical, config.rootId(), nodeId, Instant::now);
+                physical, config.group(), nodeId, Instant::now);
 
-        TriggerEngine engine = new TriggerEngine(store, config.group(), config.rootId(), nodeId,
+        TriggerEngine engine = new TriggerEngine(store, config.group(), nodeId,
                 node::syncNow, node::runSerialized, Instant::now, config.debounce());
         List<AutoCloseable> watchers = new ArrayList<>();
         try {
@@ -226,7 +226,7 @@ public final class DesktopService implements AutoCloseable {
 
     public Status status() {
         return node.readSerialized(() -> {
-            SyncRun lastRun = store.runs().recent(config.rootId(), 1).stream()
+            SyncRun lastRun = store.runs().recent(config.group(), 1).stream()
                     .findFirst()
                     .orElse(null);
             int conflicts = store.conflicts().findOpen(1000).size();

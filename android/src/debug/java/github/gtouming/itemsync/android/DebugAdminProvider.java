@@ -124,7 +124,6 @@ public final class DebugAdminProvider extends ContentProvider {
         AndroidSyncConfig config = AndroidSyncConfig.of(getContext());
         String root = config.rootPath();
         GroupId group = GroupId.parse(config.groupId());
-        String rootId = config.rootId();
         int port = config.port();
         int interval = config.intervalSeconds();
 
@@ -149,15 +148,10 @@ public final class DebugAdminProvider extends ContentProvider {
                 root = value.trim();
             }
             case "port" -> port = parsePort(value);
-            case "root-id" -> rootId = value.trim();
             case "interval-seconds" -> interval = parseNonNegative(value);
             default -> throw new DebugAdminException(2, "unknown or unsupported Android config key: " + key);
         }
-        if (rootId.isEmpty()) {
-            throw new DebugAdminException(2, "root-id must not be blank");
-        }
         config.save(root, group.value(), port, interval);
-        config.saveRootId(rootId);
         return configJson(AndroidSyncConfig.of(getContext()));
     }
 
@@ -211,7 +205,6 @@ public final class DebugAdminProvider extends ContentProvider {
         data.addProperty("group", config.groupId());
         data.addProperty("root", config.rootPath());
         data.addProperty("port", config.port());
-        data.addProperty("rootId", config.rootId());
         data.addProperty("intervalSeconds", config.intervalSeconds());
         GroupId group = GroupId.parse(config.groupId());
         List<String> fingerprints = new AndroidTrustStore(getContext()).fingerprints(group);

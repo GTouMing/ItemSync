@@ -1,7 +1,7 @@
 package github.gtouming.itemsync.sync.engine.transport;
 
 import github.gtouming.itemsync.domain.error.ErrorCode;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.model.ManifestEntry;
 import github.gtouming.itemsync.transport.frame.ErrorMessage;
 import github.gtouming.itemsync.transport.frame.Frame;
@@ -23,12 +23,12 @@ public final class RemoteSyncServer implements FrameHandler {
 
     private static final int PAGE_SIZE = 500;
 
-    private final SyncRootId rootId;
+    private final GroupId groupId;
     private final ManifestProvider manifests;
     private final BlobSource blobs;
 
-    public RemoteSyncServer(SyncRootId rootId, ManifestProvider manifests, BlobSource blobs) {
-        this.rootId = Objects.requireNonNull(rootId, "rootId");
+    public RemoteSyncServer(GroupId groupId, ManifestProvider manifests, BlobSource blobs) {
+        this.groupId = Objects.requireNonNull(groupId, "groupId");
         this.manifests = Objects.requireNonNull(manifests, "manifests");
         this.blobs = Objects.requireNonNull(blobs, "blobs");
     }
@@ -47,13 +47,13 @@ public final class RemoteSyncServer implements FrameHandler {
     }
 
     private void serveManifest(FrameConnection connection, ManifestRequest request) throws IOException {
-        if (!request.rootId().equals(rootId)) {
+        if (!request.groupId().equals(groupId)) {
             connection.send(new Frame(FrameType.ERROR, FramePayloads.encodeError(
-                    new ErrorMessage(ErrorCode.INVALID_REQUEST, "unknown sync root"))));
+                    new ErrorMessage(ErrorCode.INVALID_REQUEST, "unknown sync group"))));
             return;
         }
 
-        ManifestSnapshot snapshot = manifests.manifest(rootId, request.sinceSequence());
+        ManifestSnapshot snapshot = manifests.manifest(groupId, request.sinceSequence());
         List<ManifestEntry> entries = snapshot.entries();
         for (int start = 0; start < entries.size(); start += PAGE_SIZE) {
             int end = Math.min(start + PAGE_SIZE, entries.size());

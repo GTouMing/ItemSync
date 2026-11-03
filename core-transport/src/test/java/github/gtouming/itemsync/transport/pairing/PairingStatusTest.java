@@ -137,7 +137,7 @@ class PairingStatusTest {
                     serverIdentity.fingerprint(), clientHandler)) {
                 client.send(new Frame(FrameType.MANIFEST_REQUEST,
                         FramePayloads.encodeManifestRequest(new ManifestRequest(
-                                github.gtouming.itemsync.domain.identity.SyncRootId.of("root-1"),
+                                GROUP,
                                 github.gtouming.itemsync.domain.replication.VersionVector.empty(),
                                 null))));
 

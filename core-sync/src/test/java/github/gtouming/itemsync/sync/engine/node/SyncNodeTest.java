@@ -3,7 +3,6 @@ package github.gtouming.itemsync.sync.engine.node;
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.store.metadata.jdbc.JdbcMetadataStore;
 import github.gtouming.itemsync.sync.apply.PathResolvers;
@@ -37,7 +36,6 @@ class SyncNodeTest {
     private static final DeviceId DEVICE_A = DeviceId.of("device-a");
     private static final DeviceId DEVICE_B = DeviceId.of("device-b");
     private static final GroupId GROUP = GroupId.parse("group001");
-    private static final SyncRootId ROOT = SyncRootId.of("root-1");
 
     private static TlsIdentity identityA;
     private static TlsIdentity identityB;
@@ -60,16 +58,16 @@ class SyncNodeTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        rootA = Files.createDirectories(temp.resolve("a-root"));
-        rootB = Files.createDirectories(temp.resolve("b-root"));
+        rootA = Files.createDirectories(temp.resolve("a-GROUP"));
+        rootB = Files.createDirectories(temp.resolve("b-GROUP"));
         FileSystemBlobStore blobsA = new FileSystemBlobStore(temp.resolve("a-data"));
         FileSystemBlobStore blobsB = new FileSystemBlobStore(temp.resolve("b-data"));
         storeA = JdbcMetadataStore.open("jdbc:sqlite:" + temp.resolve("a.db").toAbsolutePath());
         storeB = JdbcMetadataStore.open("jdbc:sqlite:" + temp.resolve("b.db").toAbsolutePath());
 
-        a = new SyncNode(NODE_A, GROUP, ROOT, rootA, storeA, blobsA, PathResolvers.posix(),
+        a = new SyncNode(NODE_A, GROUP, rootA, storeA, blobsA, PathResolvers.posix(),
                 identityA, DEVICE_A, identityB.fingerprint(), 0, temp.resolve("a-transfer"));
-        b = new SyncNode(NODE_B, GROUP, ROOT, rootB, storeB, blobsB, PathResolvers.posix(),
+        b = new SyncNode(NODE_B, GROUP, rootB, storeB, blobsB, PathResolvers.posix(),
                 identityB, DEVICE_B, identityA.fingerprint(), 0, temp.resolve("b-transfer"));
 
         a.addPeer(NODE_B, "127.0.0.1", b.port(), identityB.fingerprint());
@@ -109,16 +107,16 @@ class SyncNodeTest {
         Files.writeString(rootA.resolve("two.txt"), "2", StandardCharsets.UTF_8);
         a.syncNow();
         await(() -> hasContent(rootB, "two.txt", "2"), "B receives initial files");
-        await(() -> storeB.cursors().pullSequence(ROOT, NODE_A) > 0,
+        await(() -> storeB.cursors().pullSequence(GROUP, NODE_A) > 0,
                 "B initializes the pull cursor");
 
-        long before = storeB.cursors().pullSequence(ROOT, NODE_A);
+        long before = storeB.cursors().pullSequence(GROUP, NODE_A);
 
         Files.writeString(rootA.resolve("one.txt"), "1-updated", StandardCharsets.UTF_8);
         a.syncNow();
 
         await(() -> hasContent(rootB, "one.txt", "1-updated"), "B receives the update");
-        await(() -> storeB.cursors().pullSequence(ROOT, NODE_A) == before + 1,
+        await(() -> storeB.cursors().pullSequence(GROUP, NODE_A) == before + 1,
                 "B advances the pull cursor by one");
     }
 

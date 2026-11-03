@@ -3,7 +3,6 @@ package github.gtouming.itemsync.sync.engine.node;
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.store.metadata.jdbc.JdbcMetadataStore;
 import github.gtouming.itemsync.sync.apply.PathResolvers;
@@ -24,7 +23,6 @@ class SyncNodePairingTest {
     private static final GroupId GROUP = GroupId.parse("group001");
     private static final NodeId NODE = NodeId.of("pairing-node");
     private static final DeviceId DEVICE = DeviceId.of("pairing-device");
-    private static final SyncRootId ROOT_ID = SyncRootId.of("root-1");
 
     @TempDir
     Path temp;
@@ -38,7 +36,7 @@ class SyncNodePairingTest {
                 "jdbc:sqlite:" + temp.resolve("node.db").toAbsolutePath());
 
         try {
-            try (SyncNode node = new SyncNode(NODE, GROUP, ROOT_ID, root, store,
+            try (SyncNode node = new SyncNode(NODE, GROUP, root, store,
                     new FileSystemBlobStore(temp.resolve("data")), PathResolvers.posix(),
                     identity, DEVICE, Set.of("none"), 0, temp.resolve("transfer"),
                     (group, fingerprint) -> fingerprint.equals(client.fingerprint()))) {

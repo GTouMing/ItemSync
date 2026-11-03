@@ -1,10 +1,10 @@
 package github.gtouming.itemsync.sync.engine.transport;
 
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.BlobHash;
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.model.ManifestEntry;
 import github.gtouming.itemsync.store.blob.FileSystemBlobStore;
 import github.gtouming.itemsync.store.metadata.jdbc.JdbcMetadataStore;
@@ -50,7 +50,7 @@ class TlsRemotePeerTest {
     private static final NodeId NODE_B = NodeId.of("node-b");
     private static final DeviceId DEVICE_A = DeviceId.of("device-a");
     private static final DeviceId DEVICE_B = DeviceId.of("device-b");
-    private static final SyncRootId ROOT = SyncRootId.of("root-1");
+    private static final GroupId GROUP = GroupId.parse("group001");
 
     private static TlsIdentity serverIdentity;
     private static TlsIdentity clientIdentity;
@@ -116,7 +116,7 @@ class TlsRemotePeerTest {
 
         try (TlsTransportServer server = startServer(manifest);
              TlsRemotePeer peer = connect(server)) {
-            ManifestSnapshot fetched = peer.manifest(ROOT, 0L);
+            ManifestSnapshot fetched = peer.manifest(GROUP, 0L);
 
             assertEquals(paths(manifest), paths(fetched.entries()));
             try (InputStream in = peer.openBlob(hash)) {
@@ -156,7 +156,7 @@ class TlsRemotePeerTest {
                     "127.0.0.1", server.port(), clientIdentity,
                     serverIdentity.fingerprint(), NODE_A, temp.resolve("downloads"),
                     Duration.ofMillis(800), Duration.ZERO)) {
-                ManifestSnapshot snapshot = peer.manifest(ROOT, 0L);
+                ManifestSnapshot snapshot = peer.manifest(GROUP, 0L);
 
                 assertEquals(manifest.size(), snapshot.entries().size());
             }
@@ -191,8 +191,8 @@ class TlsRemotePeerTest {
     }
 
     private TlsTransportServer startServer(List<ManifestEntry> manifest) throws IOException {
-        RemoteSyncServer handler = new RemoteSyncServer(ROOT,
-                (rootId, since) -> new ManifestSnapshot(manifest, 0L), BlobSources.of(a.blobs));
+        RemoteSyncServer handler = new RemoteSyncServer(GROUP,
+                (groupId, since) -> new ManifestSnapshot(manifest, 0L), BlobSources.of(a.blobs));
         TlsTransportServer server = new TlsTransportServer(
                 serverIdentity, clientIdentity.fingerprint(), 0, handler);
         server.start();
@@ -226,9 +226,9 @@ class TlsRemotePeerTest {
             Files.createDirectories(root);
             this.blobs = new FileSystemBlobStore(base.resolve("data"));
             this.store = JdbcMetadataStore.open("jdbc:sqlite:" + base.resolve("meta.db").toAbsolutePath());
-            this.reconciler = new LocalReconciler(root, store, blobs, ROOT, nodeId,
+            this.reconciler = new LocalReconciler(root, store, blobs, GROUP, nodeId,
                     PathResolvers.posix(), () -> T0);
-            LocalApplier applier = new LocalApplier(root, store, blobs, PathResolvers.posix(), ROOT,
+            LocalApplier applier = new LocalApplier(root, store, blobs, PathResolvers.posix(), GROUP,
                     nodeId, deviceId, () -> T0);
             this.engine = new SyncEngine(reconciler, applier, new SyncPlanner());
         }

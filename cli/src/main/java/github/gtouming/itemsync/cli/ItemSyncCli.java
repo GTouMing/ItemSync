@@ -3,7 +3,6 @@ package github.gtouming.itemsync.cli;
 import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.domain.identity.TriggerId;
 import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.Trigger;
@@ -109,7 +108,6 @@ public final class ItemSyncCli {
         NodeId nodeId = NodeId.of(readText(data.resolve("node-id"), "node id"));
         DeviceId deviceId = DeviceId.of(readText(data.resolve("device-id"), "device id"));
         GroupId group = GroupId.parse(arguments.required("group"));
-        SyncRootId rootId = SyncRootId.of(arguments.optional("root-id", "root-1"));
         Path root = PathSupport.expandUser(arguments.required("root")).toAbsolutePath();
         Files.createDirectories(root);
         PathSupport.requireDataDirOutsideRoot(data, root);
@@ -135,7 +133,7 @@ public final class ItemSyncCli {
         JdbcMetadataStore store = openStore(data);
         SyncNode node;
         try {
-            node = new SyncNode(nodeId, group, rootId, root, store,
+            node = new SyncNode(nodeId, group, root, store,
                     new FileSystemBlobStore(data), resolver(), identity, deviceId,
                     acceptedClients, port, data.resolve("transfer"));
             for (PeerAddress peer : peers) {
@@ -146,7 +144,7 @@ public final class ItemSyncCli {
             throw e;
         }
 
-        TriggerEngine triggerEngine = new TriggerEngine(store, group, rootId, nodeId,
+        TriggerEngine triggerEngine = new TriggerEngine(store, group, nodeId,
                 node::syncNow, node::runSerialized, Instant::now,
                 Duration.ofSeconds(debounceSeconds));
         List<AutoCloseable> watchers = new ArrayList<>();
@@ -207,7 +205,6 @@ public final class ItemSyncCli {
         NodeId nodeId = NodeId.of(readText(data.resolve("node-id"), "node id"));
         DeviceId deviceId = DeviceId.of(readText(data.resolve("device-id"), "device id"));
         GroupId group = GroupId.parse(arguments.required("group"));
-        SyncRootId rootId = SyncRootId.of(arguments.optional("root-id", "root-1"));
         Path root = PathSupport.expandUser(arguments.required("root")).toAbsolutePath();
         Files.createDirectories(root);
         PathSupport.requireDataDirOutsideRoot(data, root);
@@ -216,7 +213,7 @@ public final class ItemSyncCli {
 
         JdbcMetadataStore store = openStore(data);
         try {
-            try (SyncNode node = new SyncNode(nodeId, group, rootId, root, store,
+            try (SyncNode node = new SyncNode(nodeId, group, root, store,
                     new FileSystemBlobStore(data), resolver(), identity, deviceId,
                     peer.fingerprint(), 0, data.resolve("transfer"))) {
                 addPeer(node, peer);
@@ -238,7 +235,6 @@ public final class ItemSyncCli {
     private static void triggerAdd(CliArguments arguments) throws Exception {
         Path data = dataDirectory(arguments);
         GroupId group = GroupId.parse(arguments.required("group"));
-        SyncRootId rootId = SyncRootId.of(arguments.optional("root-id", "root-1"));
         String type = arguments.required("type");
 
         TriggerType triggerType;
@@ -270,7 +266,7 @@ public final class ItemSyncCli {
 
         JdbcMetadataStore store = openStore(data);
         try {
-            Trigger trigger = new Trigger(new TriggerId(UUID.randomUUID().toString()), group, rootId,
+            Trigger trigger = new Trigger(new TriggerId(UUID.randomUUID().toString()), group,
                     triggerType, TriggerConfigCodec.encode(config), true, null);
             store.triggers().upsert(trigger);
             System.out.println("trigger: " + trigger.id());
@@ -307,10 +303,10 @@ public final class ItemSyncCli {
 
     private static void runList(CliArguments arguments) throws Exception {
         Path data = dataDirectory(arguments);
-        SyncRootId rootId = SyncRootId.of(arguments.optional("root-id", "root-1"));
+        GroupId group = GroupId.parse(arguments.required("group"));
         JdbcMetadataStore store = openStore(data);
         try {
-            for (SyncRun run : store.runs().recent(rootId, 20)) {
+            for (SyncRun run : store.runs().recent(group, 20)) {
                 System.out.println(run.id() + " " + run.state()
                         + " trigger=" + run.triggerId()
                         + " stats=" + run.statsJson()
@@ -329,17 +325,17 @@ public final class ItemSyncCli {
                   init          --data <dir> --password <pw>
                   fingerprint   --data <dir> --password <pw>
                   serve         --data <dir> --password <pw> --root <path> --group <id>
-                                --expect <fingerprint[,fingerprint]> [--port 47800] [--root-id root-1]
+                                --expect <fingerprint[,fingerprint]> [--port 47800]
                                 [--interval 0] [--debounce 30] [--peer <host:port:fingerprint>]...
                   sync          --data <dir> --password <pw> --root <path> --group <id>
-                                --peer <host:port:fingerprint> [--root-id root-1] [--wait 3]
+                                --peer <host:port:fingerprint> [--wait 3]
                   trigger-add   --data <dir> --group <id> --type alarm|directory|process
                                   alarm:     --days MON,WED --time 23:00 [--zone Asia/Shanghai]
                                   directory: (no extra options)
                                   process:   --executable code.exe [--on-start true] [--on-stop true]
                   trigger-list  --data <dir> --group <id>
                   trigger-remove --data <dir> --id <trigger-id>
-                  run-list      --data <dir> [--root-id root-1]
+                  run-list      --data <dir> --group <id>
                   config        get|set ... [--platform desktop|android] [--data <dir>]
                                 [--serial <serial>] [--adb <path>] [--json] [--yes]
                   trust         list|add|remove|clear ... [--platform ...] [--data <dir>]

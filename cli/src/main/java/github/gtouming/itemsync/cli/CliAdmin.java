@@ -7,7 +7,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import github.gtouming.itemsync.domain.identity.GroupId;
-import github.gtouming.itemsync.domain.identity.SyncRootId;
 import github.gtouming.itemsync.platform.desktop.DesktopConfig;
 import github.gtouming.itemsync.platform.desktop.PathSupport;
 import github.gtouming.itemsync.sync.trust.FileTrustStore;
@@ -129,20 +128,17 @@ final class CliAdmin {
                     throw new AdminException(2, "config set root requires --yes");
                 }
                 updated = DesktopConfig.create(dataDir, PathSupport.expandUser(value),
-                        current.group(), current.rootId(), current.port(),
+                        current.group(), current.port(),
                         current.launchCommand(), current.debounce());
             }
             case "port" -> updated = DesktopConfig.create(dataDir, current.root(),
-                    current.group(), current.rootId(), parsePort(value),
-                    current.launchCommand(), current.debounce());
-            case "root-id" -> updated = DesktopConfig.create(dataDir, current.root(),
-                    current.group(), SyncRootId.of(value), current.port(),
+                    current.group(), parsePort(value),
                     current.launchCommand(), current.debounce());
             case "launch-command" -> updated = DesktopConfig.create(dataDir, current.root(),
-                    current.group(), current.rootId(), current.port(), value,
+                    current.group(), current.port(), value,
                     current.debounce());
             case "debounce-seconds" -> updated = DesktopConfig.create(dataDir, current.root(),
-                    current.group(), current.rootId(), current.port(),
+                    current.group(), current.port(),
                     current.launchCommand(), Duration.ofSeconds(parseNonNegative(value)));
             default -> throw new AdminException(2, "unknown desktop config key: " + key);
         }
@@ -216,7 +212,6 @@ final class CliAdmin {
         json.addProperty("group", config.group().value());
         json.addProperty("root", config.root().toString());
         json.addProperty("port", config.port());
-        json.addProperty("rootId", config.rootId().value());
         json.addProperty("launchCommand", config.launchCommand());
         json.addProperty("debounceSeconds", config.debounce().toSeconds());
         try {
