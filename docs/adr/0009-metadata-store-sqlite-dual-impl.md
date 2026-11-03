@@ -2,6 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-11-01
+- 修订：[ADR-0035](0035-multi-group-single-root.md) 组 ID 作为唯一根键，schema 迁移 `root_id` → `group_id`。
 
 ## 背景
 

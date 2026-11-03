@@ -3,6 +3,7 @@
 - 状态：已接受
 - 日期：2026-11-01
 - 修订：Android 端需 API 29+ 才支持 TLS 1.3，见 [ADR-0027](0027-android-min-sdk-29.md)。
+- 修订：[ADR-0036](0036-shared-port-group-routing.md) 多组共享端口、mDNS `groupIds` 与 SNI 组路由。
 
 ## 背景
 

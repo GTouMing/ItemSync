@@ -28,13 +28,14 @@
 │ Win  │◄──────►│ Win  │◄──────►│ Andr │◄──────►│ Andr │
 │ 节点 │        │ 节点 │        │ 节点 │        │ 节点 │
 └──────┘        └──────┘        └──────┘        └──────┘
-   同步组 = 同一组 ID 的隐式集合；实际同步由成对信任开关决定（ADR-0029/0030），无协调者
+   同步组 = 本机持久化的配置单元（最多 5 个）；每组一个根、若干规则和组内设备列表；实际同步由成对信任决定（ADR-0035）
 ```
 
-- 发现：JmDNS 注册 `_itemsync._tcp.local`，TXT 带 `deviceId` / `protocolVersion` / `groupId` / `certificateFingerprint` / `pairingPort`。
-- 连接：同组设备先开启成对信任，固定证书后进入 mTLS（ADR-0033）。首次开启信任是 TOFU，不再使用 6 位短码；未建立连接时通过独立的配对端点查询远端信任状态（ADR-0031）。已建立的同步 TLS 连接（出站或入站）直接视为对端信任本机；撤销会关闭连接，空闲连接用 PING/PONG 检测，关闭后按 presence 重连（ADR-0034）。
-- 传播：变更方 `NOTIFY` → 接收方临时 `RECEIVE_ONLY` 拉取 → 立即反推（ADR-0021）。
-- 端口：固定监听 TCP `47800`（ADR-0011），mDNS TXT 同时发布端口号；被占用则启动失败并提示，不自动漂移。
+- 多组：初始空列表，按需添加；一组一根、组 ID 不可变；停用组不广播、不同步（ADR-0035）。
+- 发现：JmDNS 注册一条 `_itemsync._tcp.local` 广告，TXT 带 `deviceId` / `protocolVersion` / `groupIds`（最多 5 个）/ `certificateFingerprint` / `pairingPort`。
+- 连接：一个共享同步端口，SNI/Hello 绑定组（ADR-0036）；同组设备先开启成对信任，固定证书后进入 mTLS（ADR-0033）。首次开启信任是 TOFU，不再使用 6 位短码；未建立连接时通过共享配对端点查询该组的远端信任状态（ADR-0031）。已建立的同步 TLS 连接（出站或入站）直接视为对端信任本机；撤销会关闭该组连接，空闲连接用 PING/PONG 检测（ADR-0034）。
+- 传播：变更方 `NOTIFY` → 接收方临时 `RECEIVE_ONLY` 拉取 → 立即反推（ADR-0021）；run 以组为作用域。
+- 端口：所有组共享固定监听 TCP `47800`（ADR-0036）；配对端点使用临时端口；mDNS TXT 同时发布组列表与端口号；被占用则启动失败并提示，不自动漂移。
 
 ## 3. 模块结构（Gradle 多项目，ADR-0020）
 
@@ -58,9 +59,10 @@
 ```java
 // identity
 record NodeId(String value) {}
-record GroupId(String value) {}          // 8 位 [0-9a-z]
-record SyncRootId(String value) {}
+record DeviceId(String value) {}
+record GroupId(String value) {}          // 8 位 [0-9a-z]，发现命名空间 + 唯一组/根键，不可变
 record LogicalPath(String value) {}      // 跨平台逻辑名，ADR-0012
+record SyncRuleId(String value) {}
 
 // replication
 final class VersionVector {
@@ -71,19 +73,38 @@ final class VersionVector {
 // aggregate
 final class SyncGroup {
     GroupId id;
-    Map<NodeId, GroupMember> members;    // consent / blocked / lastSeen
+    String name;                         // 仅本地显示
+    SyncRoot root;                       // 恰好一个，值对象
+    List<SyncRule> rules;                // 0..N，闹钟/条件
+    List<GroupDevice> devices;           // 持久化的组内设备列表
     LogicalClock clock;                  // 持久化
 }
 
-final class SyncRoot {
-    SyncRootId id;
-    GroupId groupId;
+final class SyncRoot {                   // 值对象，无独立 ID
     Path physicalPath;                   // Windows 路径 / Android 真实路径
+    String displayName;
     IgnoreRules ignoreRules;             // .isignore 快照
 }
 
+final class SyncRule {                   // 内部持久化名 Trigger
+    SyncRuleId id;
+    GroupId groupId;
+    SyncRuleKind kind;                   // ALARM | CONDITION
+    String configJson;
+    boolean enabled;
+}
+
+final class GroupDevice {
+    GroupId groupId;
+    DeviceId deviceId;                   // 组内设备键 (groupId, deviceId)
+    String displayName;
+    String certFingerprint;              // 当前证书
+    Instant lastSeen;                    // 可离线
+    boolean trusted;                     // 由 (groupId, fingerprint) 信任记录派生
+}
+
 final class Item {
-    SyncRootId rootId;
+    GroupId groupId;                     // 取代 rootId
     LogicalPath logicalPath;
     ItemKind kind;                       // FILE | DIRECTORY
     VersionId currentVersion;
@@ -113,7 +134,7 @@ public interface SyncEngine {
 
 public interface MetadataStore extends AutoCloseable {
     <T> T transaction(Function<Tx, T> work);
-    ItemPage items(SyncRootId root, PageToken token, int limit);
+    ItemPage items(GroupId group, PageToken token, int limit);
     // ... 分页优先，禁止 findAll
 }
 ```
@@ -125,24 +146,23 @@ CREATE TABLE account      (id INTEGER PRIMARY KEY, username TEXT UNIQUE NOT NULL
                            argon2 TEXT NOT NULL, salt BLOB NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE peer         (node_id TEXT PRIMARY KEY, device_id TEXT NOT NULL, device_name TEXT,
                            platform TEXT, cert_fingerprint TEXT NOT NULL, last_seen_at INTEGER);
-CREATE TABLE sync_group   (id TEXT PRIMARY KEY, group_token TEXT NOT NULL, name TEXT,
+CREATE TABLE sync_group   (id TEXT PRIMARY KEY, name TEXT, physical_path TEXT NOT NULL,
+                           display_name TEXT, ignore_snapshot TEXT,
                            logical_clock INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
-CREATE TABLE group_member (group_id TEXT NOT NULL, node_id TEXT NOT NULL, display_name TEXT,
-                           consent INTEGER NOT NULL DEFAULT 0, blocked INTEGER NOT NULL DEFAULT 0,
-                           joined_at INTEGER, PRIMARY KEY (group_id, node_id));
-CREATE TABLE sync_root    (id TEXT PRIMARY KEY, group_id TEXT NOT NULL, physical_path TEXT NOT NULL,
-                           display_name TEXT, ignore_snapshot TEXT, created_at INTEGER NOT NULL);
-CREATE TABLE item         (id TEXT PRIMARY KEY, root_id TEXT NOT NULL, logical_path TEXT NOT NULL,
+CREATE TABLE group_device (group_id TEXT NOT NULL, device_id TEXT NOT NULL, display_name TEXT,
+                           cert_fingerprint TEXT NOT NULL, last_seen_at INTEGER, known_at INTEGER NOT NULL,
+                           PRIMARY KEY (group_id, device_id));
+CREATE TABLE item         (id TEXT PRIMARY KEY, group_id TEXT NOT NULL, logical_path TEXT NOT NULL,
                            kind TEXT NOT NULL, current_version_id TEXT, deleted_at INTEGER,
-                           UNIQUE (root_id, logical_path));
-CREATE TABLE item_vector  (root_id TEXT NOT NULL, logical_path TEXT NOT NULL, node_id TEXT NOT NULL,
-                           counter INTEGER NOT NULL, PRIMARY KEY (root_id, logical_path, node_id));
-CREATE TABLE item_change  (seq INTEGER PRIMARY KEY AUTOINCREMENT, root_id TEXT NOT NULL,
-                           logical_path TEXT NOT NULL, UNIQUE (root_id, logical_path));
-CREATE TABLE sync_cursor  (root_id TEXT NOT NULL, node_id TEXT NOT NULL,
+                           UNIQUE (group_id, logical_path));
+CREATE TABLE item_vector  (group_id TEXT NOT NULL, logical_path TEXT NOT NULL, node_id TEXT NOT NULL,
+                           counter INTEGER NOT NULL, PRIMARY KEY (group_id, logical_path, node_id));
+CREATE TABLE item_change  (seq INTEGER PRIMARY KEY AUTOINCREMENT, group_id TEXT NOT NULL,
+                           logical_path TEXT NOT NULL, UNIQUE (group_id, logical_path));
+CREATE TABLE sync_cursor  (group_id TEXT NOT NULL, node_id TEXT NOT NULL,
                            pull_sequence INTEGER NOT NULL DEFAULT 0,
                            push_sequence INTEGER NOT NULL DEFAULT 0,
-                           PRIMARY KEY (root_id, node_id));
+                           PRIMARY KEY (group_id, node_id));
 CREATE TABLE version      (id TEXT PRIMARY KEY, item_id TEXT NOT NULL, blob_hash TEXT NOT NULL,
                            size INTEGER NOT NULL, mtime INTEGER NOT NULL, source_node_id TEXT NOT NULL,
                            vector_json TEXT NOT NULL, run_id TEXT, created_at INTEGER NOT NULL);
@@ -151,10 +171,10 @@ CREATE TABLE tombstone    (item_id TEXT PRIMARY KEY, vector_json TEXT NOT NULL,
 CREATE TABLE conflict     (id TEXT PRIMARY KEY, item_id TEXT NOT NULL, local_version_id TEXT,
                            remote_version_id TEXT, copy_logical_path TEXT, detected_at INTEGER NOT NULL,
                            resolved_at INTEGER);
-CREATE TABLE trigger      (id TEXT PRIMARY KEY, group_id TEXT NOT NULL, root_id TEXT NOT NULL,
+CREATE TABLE trigger      (id TEXT PRIMARY KEY, group_id TEXT NOT NULL,
                            type TEXT NOT NULL, config_json TEXT NOT NULL, enabled INTEGER NOT NULL,
                            next_fire_at INTEGER);
-CREATE TABLE sync_run     (id TEXT PRIMARY KEY, group_id TEXT NOT NULL, root_id TEXT NOT NULL,
+CREATE TABLE sync_run     (id TEXT PRIMARY KEY, group_id TEXT NOT NULL,
                            trigger_id TEXT, source_node_id TEXT, state TEXT NOT NULL,
                            started_at INTEGER NOT NULL, ended_at INTEGER, stats_json TEXT, error_code TEXT);
 CREATE TABLE resume       (blob_hash TEXT NOT NULL, peer_node_id TEXT NOT NULL, bytes_done INTEGER NOT NULL,
@@ -197,7 +217,7 @@ CREATE TABLE resume       (blob_hash TEXT NOT NULL, peer_node_id TEXT NOT NULL, 
 
 关键不变量：
 
-- 一次 Sync Run 只处理一个 `(syncRoot, group)`，同一对组合不允许并行。
+- 一次 Sync Run 只处理一个组（一组一根）；组内不允许并行，不同组可并行但受全局并发上限约束。
 - Apply 必须先落 Blob 再原子替换目标文件，中途失败可重入。
 - 任何时刻崩溃，重跑不得产生重复版本或重复冲突副本（按 `(item, vector, blobHash)` 幂等）。
 - NOTIFY 丢失不影响一致性，只影响延迟。
@@ -247,18 +267,18 @@ CREATE TABLE resume       (blob_hash TEXT NOT NULL, peer_node_id TEXT NOT NULL, 
 ```
 帧头：magic(2) | version(1) | type(1) | length(4) | payload
 
-HELLO            {protocolVersion, nodeId, certificateFingerprint}
-HELLO_ACK        {protocolVersion, nodeId, certificateFingerprint}
+HELLO            {protocolVersion, nodeId, groupId, certificateFingerprint}
+HELLO_ACK        {protocolVersion, nodeId, groupId, certificateFingerprint}
 PING / PONG      {nonce}                                      // 同步连接空闲检测（ADR-0034）
 BLOB_GET         {hash, offset}
 BLOB_CHUNK       {offset(8) | length(4) | data | crc32(4)}   // 1 MiB
 BLOB_RESULT      {hash, ok, size, errorCode}
 ERROR            {code, message}
 
-// M0.5 计划：
-NOTIFY           {runId, groupId, logicalTime, vectorSnapshot, changedRootId}
+// M0.5 计划：SNI 携带 groupId，HELLO 再校验；一个连接只属于一个组（ADR-0036）
+NOTIFY           {runId, groupId, logicalTime, vectorSnapshot}
 NOTIFY_ACK       {runId, accepted, queuePosition}
-MANIFEST_REQUEST {rootId, sinceSequence, sinceVector, ignoreHash}
+MANIFEST_REQUEST {groupId, sinceSequence, sinceVector, ignoreHash}
 MANIFEST_PAGE    {entries[], nextCursor}
 MANIFEST_END     {totalEntries, sequence}
 ```
@@ -313,6 +333,9 @@ Android：
 | 风险                                | 影响                | 缓解                                                 |
 |-------------------------------------|---------------------|------------------------------------------------------|
 | 8 位组 ID 可枚举                    | 在线状态/设备名泄露 | 组 ID 不是秘密；成对信任 + 证书固定保护数据；关闭信任/撤销阻断（ADR-0029/0033） |
+| 多组共享端口/组路由错误             | 跨组数据串流/误撤销 | SNI 选组 + Hello 校验 + 按组连接跟踪；跨组帧拒绝（ADR-0036） |
+| 多组迁移 root_id → group_id         | 旧数据/游标丢失     | 显式迁移 + 迁移测试 + 备份；一组一根回填（ADR-0035） |
+| mDNS 组列表可见                     | 设备组归属泄露      | 组 ID 非秘密；可见性已接受；UI 说明（ADR-0029/0036） |
 | Play 拒绝 `MANAGE_EXTERNAL_STORAGE` | 无法上架            | 申报核心用途；准备 SAF 降级方案（新 ADR）            |
 | 厂商 ROM 杀后台                     | 同步延迟            | 前台服务 + 白名单引导 + 闹钟恢复；UI 明示            |
 | 组播被路由器/系统限制               | 发现失败            | 手动添加 IP 兜底                                     |
@@ -328,6 +351,7 @@ Android：
 2. Windows 目录监听用 JNA 还是自带 JNI 封装；轮询兜底阈值。
 3. 自动更新机制是否纳入 M2 之后（当前在范围外）。
 4. 传输并发上限与带宽限制是否需要 UI 配置。
+5. 多组持久化与共享端口的实现迁移（ADR-0035/0036）：组编辑、根路径变更、设备列表迁移和旧客户端升级窗口。
 
 ## 13. 里程碑
 

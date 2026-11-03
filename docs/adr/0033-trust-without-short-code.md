@@ -2,6 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-11-03
+- 修订：[ADR-0035](0035-multi-group-single-root.md)/[ADR-0036](0036-shared-port-group-routing.md) 信任按组、连接按组路由；TOFU、证书固定与连接证据规则不变。
 - 替代：[ADR-0030](0030-pairwise-trust-and-presence.md) 的短码配对部分；修订 [ADR-0031](0031-pairing-status-endpoint.md) 的短码说明。
 
 ## 背景

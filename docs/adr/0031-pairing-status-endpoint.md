@@ -3,6 +3,7 @@
 - 状态：已接受
 - 日期：2026-11-02
 - 修订：[ADR-0033](0033-trust-without-short-code.md) 替代短码配对部分并补充已连接推断；[ADR-0034](0034-connection-liveness-heartbeat.md) 约束连接活性。
+- 修订：[ADR-0036](0036-shared-port-group-routing.md) 配对端点共享，按请求中的组 ID 返回。
 - 补充：[ADR-0030](0030-pairwise-trust-and-presence.md) 的配对流程与在线状态
 
 ## 背景

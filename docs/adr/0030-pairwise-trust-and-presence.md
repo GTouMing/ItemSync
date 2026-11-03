@@ -3,6 +3,7 @@
 - 状态：已接受
 - 日期：2026-11-02
 - 修订：[ADR-0033](0033-trust-without-short-code.md) 替代短码配对部分。
+- 修订：[ADR-0035](0035-multi-group-single-root.md) 组内设备列表持久化；信任仍按 `(组 ID, 证书指纹)`。
 - 替代：[ADR-0021](0021-sync-group-version-vectors.md) 的成员同意部分、[ADR-0024](0024-open-join-group-id-consent.md) 的共享同意与可见性部分；修订 [ADR-0001](0001-local-account-and-pairing.md) 的配对流程。
 
 ## 背景

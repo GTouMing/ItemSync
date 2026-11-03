@@ -2,6 +2,7 @@
 
 - 状态：已接受
 - 日期：2026-11-02
+- 修订：[ADR-0035](0035-multi-group-single-root.md) `item_change`/`sync_cursor` 使用 `group_id`，manifest 帧不再使用 `rootId`。
 - 补充：[ADR-0021](0021-sync-group-version-vectors.md) 的清单传输部分
 
 ## 背景
