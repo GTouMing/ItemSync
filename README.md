@@ -103,6 +103,8 @@ android/build/outputs/apk/debug/android-debug.apk
 - [术语表](<docs/glossary.md>)：项目概念的统一定义。
 - [架构决策记录](<docs/adr/README.md>)：已接受、已替代的设计决策。
 - [Android API 兼容规则](<docs/android-compatibility.md>)：共享核心的平台约束。
+- [Android 使用说明](<docs/android-usage.md>)：Android 过渡版配置、调试入口和已知限制。
+- [命令行数据管理](<docs/cli-admin.md>)：离线查看/修改配置与信任记录。
 - [贡献说明](<CONTRIBUTING.md>)：开发、测试、提交及分发检查。
 - [开发规范](<AGENTS.md>)：仓库工作约定。
 

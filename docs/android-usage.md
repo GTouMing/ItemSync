@@ -44,6 +44,19 @@ adb push test.txt /sdcard/Android/data/github.gtouming.itemsync/files/root/
 
 Android 11+ 的文件管理器通常不能直接访问 `Android/data`；用 adb 或应用自身。
 
+## 命令行调试入口
+
+Debug APK 还包含一个只在 debug 构建中存在的 `DebugAdminProvider`，可用桌面端 `itemsync-cli` 读取或修改配置/信任：
+
+```powershell
+itemsync-cli status --platform android --json
+itemsync-cli config get --platform android --json
+itemsync-cli config set group <组ID> --platform android --yes
+itemsync-cli trust list --platform android --json
+```
+
+修改前必须停止 Android 同步服务；release APK 不包含该 provider。
+
 ## 排查
 
 - 通知显示“启动失败”：检查端口占用、NUK 是否可解密；身份损坏时清除应用数据后重新创建身份。
