@@ -35,7 +35,7 @@ public final class PeerTrustCoordinator implements AutoCloseable {
     private static final Duration PAIRING_QUERY_TIMEOUT = Duration.ofSeconds(2);
 
     private final GroupId group;
-    private final SyncNode node;
+    private final PeerGroup peerGroup;
     private final PeerTrustStore trustStore;
     private final ConnectionProbe connectionProbe;
     private final PairingQuery pairingQuery;
@@ -52,11 +52,27 @@ public final class PeerTrustCoordinator implements AutoCloseable {
         this(group, node, trustStore, probe(node), query(identity, group), Instant::now);
     }
 
+    /**
+     * Coordinates the trust of one group of a running device, whatever shape that group has
+     * (a single group {@link SyncNode} or one {@code GroupRuntime} of a multi-group device).
+     */
+    public PeerTrustCoordinator(TlsIdentity identity, PeerGroup peerGroup,
+                                PeerTrustStore trustStore) {
+        this(groupIdOf(peerGroup), peerGroup, trustStore, probe(peerGroup),
+                query(identity, groupIdOf(peerGroup)), Instant::now);
+    }
+
     PeerTrustCoordinator(GroupId group, SyncNode node, PeerTrustStore trustStore,
                          ConnectionProbe connectionProbe, PairingQuery pairingQuery,
                          Supplier<Instant> clock) {
+        this(group, (PeerGroup) node, trustStore, connectionProbe, pairingQuery, clock);
+    }
+
+    private PeerTrustCoordinator(GroupId group, PeerGroup peerGroup, PeerTrustStore trustStore,
+                                 ConnectionProbe connectionProbe, PairingQuery pairingQuery,
+                                 Supplier<Instant> clock) {
         this.group = Objects.requireNonNull(group, "group");
-        this.node = node;
+        this.peerGroup = peerGroup;
         this.trustStore = Objects.requireNonNull(trustStore, "trustStore");
         this.connectionProbe = Objects.requireNonNull(connectionProbe, "connectionProbe");
         this.pairingQuery = Objects.requireNonNull(pairingQuery, "pairingQuery");
@@ -64,7 +80,7 @@ public final class PeerTrustCoordinator implements AutoCloseable {
     }
 
     public List<PresenceTracker.Presence> onlinePeers() {
-        List<PresenceTracker.Presence> peers = node.onlinePeers();
+        List<PresenceTracker.Presence> peers = peerGroup.onlinePeers();
         pruneCache(peers);
         for (PresenceTracker.Presence presence : peers) {
             if (isTrusted(presence.peer())) {
@@ -117,7 +133,7 @@ public final class PeerTrustCoordinator implements AutoCloseable {
     public void trustPeer(DiscoveredPeer peer) throws IOException {
         trustStore.trust(group, peer.fingerprint());
         remoteTrustCache.invalidate(peer.fingerprint());
-        node.allowClient(peer.fingerprint());
+        peerGroup.allowClient(peer.fingerprint());
         try {
             connect(peer);
             lastWarning = null;
@@ -130,13 +146,13 @@ public final class PeerTrustCoordinator implements AutoCloseable {
     public void untrustPeer(DiscoveredPeer peer) throws IOException {
         trustStore.untrust(group, peer.fingerprint());
         remoteTrustCache.invalidate(peer.fingerprint());
-        node.revokeClient(peer.fingerprint());
-        node.removePeer(peer.nodeId());
+        peerGroup.revokeClient(peer.fingerprint());
+        peerGroup.removePeer(peer.nodeId());
         lastWarning = null;
     }
 
     public void reconcileTrustedPeers() {
-        List<PresenceTracker.Presence> peers = node.onlinePeers();
+        List<PresenceTracker.Presence> peers = peerGroup.onlinePeers();
         pruneCache(peers);
         for (PresenceTracker.Presence presence : peers) {
             if (isTrusted(presence.peer())) {
@@ -152,7 +168,7 @@ public final class PeerTrustCoordinator implements AutoCloseable {
     }
 
     public void refreshRemoteTrust() {
-        List<PresenceTracker.Presence> peers = node.onlinePeers();
+        List<PresenceTracker.Presence> peers = peerGroup.onlinePeers();
         pruneCache(peers);
         for (PresenceTracker.Presence presence : peers) {
             if (presence.peer().pairingPort() <= 0) {
@@ -175,10 +191,11 @@ public final class PeerTrustCoordinator implements AutoCloseable {
         DiscoveredPeer peer = presence.peer();
         boolean connected = connectionProbe.isConnected(peer);
         if (connected) {
-            return new PeerView(presence, isTrusted(peer), RemoteTrust.TRUSTED, true, null, null);
+            return new PeerView(group, presence, isTrusted(peer), RemoteTrust.TRUSTED, true,
+                    null, null);
         }
         RemoteTrustOutcome outcome = remoteTrust(peer, forceRefresh);
-        return new PeerView(presence, isTrusted(peer), outcome.trust(), false,
+        return new PeerView(group, presence, isTrusted(peer), outcome.trust(), false,
                 outcome.failure(), outcome.detail());
     }
 
@@ -216,12 +233,13 @@ public final class PeerTrustCoordinator implements AutoCloseable {
         if (!isTrusted(peer)) {
             return;
         }
-        if (node.isConnected(peer.nodeId())) {
+        if (peerGroup.isConnected(peer.nodeId())) {
             return;
         }
         InetAddress address = addressOf(peer);
-        node.allowClient(peer.fingerprint());
-        node.addPeer(peer.nodeId(), address.getHostAddress(), peer.port(), peer.fingerprint());
+        peerGroup.allowClient(peer.fingerprint());
+        peerGroup.addPeer(peer.nodeId(), address.getHostAddress(), peer.port(),
+                peer.fingerprint());
     }
 
     private void handleCertificateMismatch(DiscoveredPeer peer) {
@@ -231,8 +249,8 @@ public final class PeerTrustCoordinator implements AutoCloseable {
             // the warning below is still useful
         }
         remoteTrustCache.invalidate(peer.fingerprint());
-        node.revokeClient(peer.fingerprint());
-        node.removePeer(peer.nodeId());
+        peerGroup.revokeClient(peer.fingerprint());
+        peerGroup.removePeer(peer.nodeId());
         lastWarning = "对端证书与缓存的指纹不匹配，已关闭对 " + peer.deviceId().value() + " 的信任";
     }
 
@@ -257,10 +275,14 @@ public final class PeerTrustCoordinator implements AutoCloseable {
         return message == null || message.trim().isEmpty() ? null : message;
     }
 
-    private static ConnectionProbe probe(SyncNode node) {
-        Objects.requireNonNull(node, "node");
-        return peer -> node.isConnected(peer.nodeId())
-                || node.hasInboundConnection(peer.fingerprint());
+    private static ConnectionProbe probe(PeerGroup peerGroup) {
+        Objects.requireNonNull(peerGroup, "peerGroup");
+        return peer -> peerGroup.isConnected(peer.nodeId())
+                || peerGroup.hasInboundConnection(peer.fingerprint());
+    }
+
+    private static GroupId groupIdOf(PeerGroup peerGroup) {
+        return Objects.requireNonNull(peerGroup, "peerGroup").groupId();
     }
 
     private static PairingQuery query(TlsIdentity identity, GroupId group) {
@@ -295,8 +317,14 @@ public final class PeerTrustCoordinator implements AutoCloseable {
         PairingStatusClient.Result query(DiscoveredPeer peer, Duration timeout) throws IOException;
     }
 
-    public record PeerView(PresenceTracker.Presence presence, boolean locallyTrusted,
-                           RemoteTrust remoteTrust, boolean connected,
+    /**
+     * One discovered peer of {@code groupId}.
+     *
+     * <p>The group id is part of the view so a backend that runs several groups can tell
+     * which group a device row belongs to; the same device shows up once per group.
+     */
+    public record PeerView(GroupId groupId, PresenceTracker.Presence presence,
+                           boolean locallyTrusted, RemoteTrust remoteTrust, boolean connected,
                            RemoteTrustFailure remoteTrustFailure,
                            String remoteTrustErrorDetail) {
     }

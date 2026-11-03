@@ -330,8 +330,8 @@ public final class DesktopApp extends Application {
 
     private void render(DesktopService.Status status) {
         nodeLabel.setText(status.nodeId().value() + "  (port " + status.port() + ")");
-        groupLabel.setText(config.group().value());
-        rootLabel.setText(status.root().toString());
+        groupLabel.setText(status.groupId() == null ? "（未配置同步组）" : status.groupId().value());
+        rootLabel.setText(status.root() == null ? "（未配置同步根）" : status.root().toString());
         fingerprintLabel.setText(status.fingerprint());
         if (status.lastRun() == null) {
             lastRunLabel.setText("尚未同步");
@@ -866,6 +866,10 @@ public final class DesktopApp extends Application {
     }
 
     private void changeGroup(Stage stage) {
+        if (!config.hasGroups()) {
+            showInfo("本机还没有同步组，无法修改组 ID。");
+            return;
+        }
         Dialog<Boolean> dialog = new Dialog<>();
         dialog.setTitle("ItemSync");
         dialog.setHeaderText("修改组 ID");

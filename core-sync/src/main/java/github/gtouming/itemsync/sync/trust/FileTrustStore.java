@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -65,10 +66,22 @@ public class FileTrustStore implements PeerTrustStore {
 
     @Override
     public synchronized void retainOnly(GroupId group) throws IOException {
-        String prefix = group.value() + "|";
+        retainOnly(List.of(group));
+    }
+
+    /**
+     * Drops the trust of every group that is not in {@code groups}; a device that serves
+     * several groups keeps the pairs of all of them.
+     */
+    public synchronized void retainOnly(Collection<GroupId> groups) throws IOException {
+        Objects.requireNonNull(groups, "groups");
+        List<String> prefixes = new ArrayList<>(groups.size());
+        for (GroupId group : groups) {
+            prefixes.add(Objects.requireNonNull(group, "group").value() + "|");
+        }
         List<String> stale = new ArrayList<>();
         for (String key : entries.stringPropertyNames()) {
-            if (!key.startsWith(prefix)) {
+            if (prefixes.stream().noneMatch(key::startsWith)) {
                 stale.add(key);
             }
         }

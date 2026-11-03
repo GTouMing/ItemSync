@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -47,6 +48,25 @@ class TrustStoreTest {
         assertTrue(store.isTrusted(other, fingerprint));
         assertFalse(new TrustStore(temp).isTrusted(GROUP, fingerprint));
         assertTrue(new TrustStore(temp).isTrusted(other, fingerprint));
+    }
+
+    @Test
+    void retainsEveryGroupOfAMultiGroupDevice() throws Exception {
+        TrustStore store = new TrustStore(temp);
+        String fingerprint = "a".repeat(64);
+        GroupId second = GroupId.parse("group002");
+        GroupId stale = GroupId.parse("group003");
+        store.trust(GROUP, fingerprint);
+        store.trust(second, fingerprint);
+        store.trust(stale, fingerprint);
+
+        store.retainOnly(List.of(GROUP, second));
+
+        assertTrue(store.isTrusted(GROUP, fingerprint));
+        assertTrue(store.isTrusted(second, fingerprint));
+        assertFalse(store.isTrusted(stale, fingerprint));
+        assertFalse(new TrustStore(temp).isTrusted(stale, fingerprint));
+        assertTrue(new TrustStore(temp).isTrusted(second, fingerprint));
     }
 
     @Test

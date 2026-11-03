@@ -10,6 +10,7 @@ import github.gtouming.itemsync.store.metadata.MetadataStore;
 import github.gtouming.itemsync.sync.apply.PhysicalPathResolver;
 import github.gtouming.itemsync.sync.engine.SyncRunResult;
 import github.gtouming.itemsync.sync.engine.group.GroupRuntime;
+import github.gtouming.itemsync.sync.trust.PeerGroup;
 import github.gtouming.itemsync.sync.trigger.TriggerEngine;
 import github.gtouming.itemsync.transport.discovery.PresenceTracker;
 import github.gtouming.itemsync.transport.pairing.PairingTrustProvider;
@@ -31,7 +32,7 @@ import java.util.Set;
  * desktop, Android, CLI and test callers keep working unchanged while the multi-group
  * device layer replaces the previous per-node server.
  */
-public final class SyncNode implements AutoCloseable {
+public final class SyncNode implements AutoCloseable, PeerGroup {
 
     private final NodeId nodeId;
     private final GroupId groupId;
@@ -95,6 +96,12 @@ public final class SyncNode implements AutoCloseable {
         this.group = runtime;
     }
 
+    @Override
+    public GroupId groupId() {
+        return groupId;
+    }
+
+    @Override
     public List<PresenceTracker.Presence> onlinePeers() {
         return group.onlinePeers();
     }
@@ -107,14 +114,17 @@ public final class SyncNode implements AutoCloseable {
         return device.discoveryError();
     }
 
+    @Override
     public void allowClient(String fingerprint) {
         device.allowClient(groupId, fingerprint);
     }
 
+    @Override
     public void revokeClient(String fingerprint) {
         device.revokeClient(groupId, fingerprint);
     }
 
+    @Override
     public void removePeer(NodeId peerNodeId) {
         group.removePeer(peerNodeId);
     }
@@ -127,10 +137,12 @@ public final class SyncNode implements AutoCloseable {
         return device.pairingPort();
     }
 
+    @Override
     public boolean isConnected(NodeId peerNodeId) {
         return group.isConnected(peerNodeId);
     }
 
+    @Override
     public boolean hasInboundConnection(String fingerprint) {
         return device.hasInboundConnection(groupId, fingerprint);
     }
@@ -148,6 +160,7 @@ public final class SyncNode implements AutoCloseable {
         return groupError != null ? groupError : device.lastError();
     }
 
+    @Override
     public void addPeer(NodeId peerNodeId, String host, int port,
                         String expectedServerFingerprint) throws IOException {
         group.addPeer(peerNodeId, host, port, expectedServerFingerprint);

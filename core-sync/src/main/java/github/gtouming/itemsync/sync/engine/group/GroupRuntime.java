@@ -22,6 +22,7 @@ import github.gtouming.itemsync.sync.engine.transport.RemoteSyncServer;
 import github.gtouming.itemsync.sync.engine.transport.TlsRemotePeer;
 import github.gtouming.itemsync.sync.plan.SyncPlanner;
 import github.gtouming.itemsync.sync.state.LocalReconciler;
+import github.gtouming.itemsync.sync.trust.PeerGroup;
 import github.gtouming.itemsync.sync.trigger.TriggerEngine;
 import github.gtouming.itemsync.transport.discovery.PresenceTracker;
 import github.gtouming.itemsync.transport.frame.Frame;
@@ -59,7 +60,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * to it and asks the device to allow, revoke or report inbound connections of its own
  * group; closing a group never closes the device.
  */
-public final class GroupRuntime implements AutoCloseable {
+public final class GroupRuntime implements AutoCloseable, PeerGroup {
 
     /**
      * The device level collaborators shared by every group of one running node.
@@ -139,6 +140,7 @@ public final class GroupRuntime implements AutoCloseable {
         refreshManifestCache();
     }
 
+    @Override
     public GroupId groupId() {
         return groupId;
     }
@@ -162,24 +164,29 @@ public final class GroupRuntime implements AutoCloseable {
         return presence;
     }
 
+    @Override
     public List<PresenceTracker.Presence> onlinePeers() {
         return presence.online();
     }
 
+    @Override
     public void allowClient(String fingerprint) {
         trustManager.allow(groupId, fingerprint);
     }
 
+    @Override
     public void revokeClient(String fingerprint) {
         trustManager.revoke(groupId, fingerprint);
         // group scoped: revoking this group must not close another group's connections
         server.closeConnections(groupId, fingerprint);
     }
 
+    @Override
     public boolean hasInboundConnection(String fingerprint) {
         return server.hasConnection(groupId, fingerprint);
     }
 
+    @Override
     public void removePeer(NodeId peerNodeId) {
         PeerLink link = peers.remove(peerNodeId);
         if (link != null) {
@@ -188,6 +195,7 @@ public final class GroupRuntime implements AutoCloseable {
         }
     }
 
+    @Override
     public boolean isConnected(NodeId peerNodeId) {
         PeerLink link = peers.get(peerNodeId);
         return link != null && link.remote.isConnected();
@@ -197,6 +205,7 @@ public final class GroupRuntime implements AutoCloseable {
         return lastError;
     }
 
+    @Override
     public void addPeer(NodeId peerNodeId, String host, int port,
                         String expectedServerFingerprint) throws IOException {
         TlsRemotePeer remote = TlsRemotePeer.connect(host, port, identity,
