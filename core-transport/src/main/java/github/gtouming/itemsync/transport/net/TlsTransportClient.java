@@ -6,6 +6,8 @@ import github.gtouming.itemsync.transport.tls.TlsIdentity;
 
 import javax.net.ssl.SSLSocket;
 import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.time.Duration;
 import java.util.Objects;
 
 public final class TlsTransportClient implements AutoCloseable {
@@ -19,13 +21,24 @@ public final class TlsTransportClient implements AutoCloseable {
     public static TlsTransportClient connect(String host, int port, TlsIdentity identity,
                                              String expectedServerFingerprint, FrameHandler handler)
             throws IOException {
+        return connect(host, port, identity, expectedServerFingerprint, handler, null);
+    }
+
+    public static TlsTransportClient connect(String host, int port, TlsIdentity identity,
+                                             String expectedServerFingerprint, FrameHandler handler,
+                                             Duration timeout) throws IOException {
         Objects.requireNonNull(host, "host");
         Objects.requireNonNull(identity, "identity");
+        int timeoutMillis = timeout == null
+                ? 0
+                : (int) Math.min(Integer.MAX_VALUE, Math.max(1, timeout.toMillis()));
         SSLSocket socket = (SSLSocket) identity
                 .sslContext(expectedServerFingerprint)
                 .getSocketFactory()
-                .createSocket(host, port);
+                .createSocket();
         try {
+            socket.connect(new InetSocketAddress(host, port), timeoutMillis);
+            socket.setSoTimeout(timeoutMillis);
             socket.setUseClientMode(true);
             socket.setEnabledProtocols(new String[] {TlsIdentity.PROTOCOL});
             socket.startHandshake();

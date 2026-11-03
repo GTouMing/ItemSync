@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 class SyncNodeTest {
@@ -125,6 +126,19 @@ class SyncNodeTest {
         Files.delete(rootA.resolve("gone.txt"));
         a.syncNow();
         await(() -> !Files.exists(rootB.resolve("gone.txt")), "B deletes gone");
+    }
+
+    @Test
+    void revocationClosesTheOtherSidesConnection() throws Exception {
+        assertTrue(a.isConnected(NODE_B));
+        assertTrue(b.isConnected(NODE_A));
+        Thread.sleep(100);
+
+        a.revokeClient(identityB.fingerprint());
+        await(() -> !b.isConnected(NODE_A), "B notices that A revoked it");
+
+        a.removePeer(NODE_B);
+        await(() -> !a.isConnected(NODE_B), "A drops its own link");
     }
 
     private static void await(BooleanSupplier condition, String description) throws InterruptedException {

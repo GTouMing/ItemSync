@@ -70,7 +70,7 @@ public final class PairingStatusClient {
         };
 
         try (TlsTransportClient client = TlsTransportClient.connect(
-                host, port, identity, expectedServerFingerprint, handler)) {
+                host, port, identity, expectedServerFingerprint, handler, timeout)) {
             client.send(new Frame(FrameType.PAIRING_STATUS,
                     FramePayloads.encodePairingStatusRequest(new PairingStatusRequest(group))));
             PairingStatusResponse response = await(future, timeout);

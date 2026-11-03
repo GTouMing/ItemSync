@@ -708,10 +708,12 @@ public final class DesktopApp extends Application {
                 (observable, oldValue, newValue) -> updateButtons.run());
         updateButtons.run();
 
+        ExecutorService deviceWorker = Executors.newCachedThreadPool(
+                runnable -> daemon(runnable, "itemsync-device-refresh"));
         Runnable refresh = () -> {
             pairButton.setDisable(true);
             revokeButton.setDisable(true);
-            worker.submit(() -> {
+            deviceWorker.submit(() -> {
                 try {
                     List<PeerTrustCoordinator.PeerView> refreshed = service.peerViews();
                     Platform.runLater(() -> {
@@ -767,7 +769,10 @@ public final class DesktopApp extends Application {
                 new KeyFrame(Duration.seconds(3), event -> refresh.run()));
         autoRefresh.setCycleCount(Animation.INDEFINITE);
         autoRefresh.play();
-        dialog.setOnHidden(event -> autoRefresh.stop());
+        dialog.setOnHidden(event -> {
+            autoRefresh.stop();
+            deviceWorker.shutdownNow();
+        });
 
         dialog.showAndWait();
     }
