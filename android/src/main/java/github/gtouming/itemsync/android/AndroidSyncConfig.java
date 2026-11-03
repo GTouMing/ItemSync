@@ -131,4 +131,8 @@ public final class AndroidSyncConfig {
     public void saveFingerprint(String fingerprint) {
         prefs.edit().putString("fingerprint", fingerprint).apply();
     }
+
+    public void saveRootId(String rootId) {
+        prefs.edit().putString("root-id", rootId.trim()).commit();
+    }
 }

@@ -8,6 +8,7 @@ import github.gtouming.itemsync.domain.identity.VersionId;
 import github.gtouming.itemsync.domain.model.FileVersion;
 import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.Trigger;
+import github.gtouming.itemsync.platform.desktop.DesktopConfig;
 import github.gtouming.itemsync.platform.desktop.NioDirectoryWatcher;
 import github.gtouming.itemsync.platform.desktop.ProcessWatcher;
 import github.gtouming.itemsync.store.blob.BlobStore;

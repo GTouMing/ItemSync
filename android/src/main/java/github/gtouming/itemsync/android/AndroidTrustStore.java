@@ -42,6 +42,19 @@ public final class AndroidTrustStore implements PeerTrustStore {
     }
 
     @Override
+    public synchronized List<String> fingerprints(GroupId group) {
+        String prefix = keyPrefix(group);
+        List<String> result = new ArrayList<>();
+        for (String existing : prefs.getAll().keySet()) {
+            if (existing.startsWith(prefix)) {
+                result.add(existing.substring(prefix.length()));
+            }
+        }
+        java.util.Collections.sort(result);
+        return Compat.copyList(result);
+    }
+
+    @Override
     public synchronized void retainOnly(GroupId group) throws IOException {
         String prefix = keyPrefix(group);
         List<String> stale = new ArrayList<>();

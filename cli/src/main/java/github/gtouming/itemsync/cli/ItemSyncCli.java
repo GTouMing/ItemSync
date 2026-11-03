@@ -53,8 +53,12 @@ public final class ItemSyncCli {
     public static void main(String[] args) {
         try {
             run(args);
+        } catch (CliAdmin.AdminException e) {
+            CliAdmin.printError(args, e);
+            System.exit(e.code());
         } catch (Exception e) {
-            System.err.println("error: " + e.getMessage());
+            CliAdmin.printError(args, new CliAdmin.AdminException(1,
+                    e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
             System.exit(1);
         }
     }
@@ -70,6 +74,9 @@ public final class ItemSyncCli {
             case "trigger-list" -> triggerList(arguments);
             case "trigger-remove" -> triggerRemove(arguments);
             case "run-list" -> runList(arguments);
+            case "config" -> CliAdmin.config(arguments);
+            case "trust" -> CliAdmin.trust(arguments);
+            case "status" -> CliAdmin.status(arguments);
             case "help", "--help" -> usage();
             default -> throw new IllegalArgumentException("unknown command: " + arguments.command());
         }
@@ -333,6 +340,12 @@ public final class ItemSyncCli {
                   trigger-list  --data <dir> --group <id>
                   trigger-remove --data <dir> --id <trigger-id>
                   run-list      --data <dir> [--root-id root-1]
+                  config        get|set ... [--platform desktop|android] [--data <dir>]
+                                [--serial <serial>] [--adb <path>] [--json] [--yes]
+                  trust         list|add|remove|clear ... [--platform ...] [--data <dir>]
+                  status        [--platform desktop|android] [--data <dir>] [--json]
+
+                Android config/trust/status requires a debuggable debug APK.
 
                 The --password value protects the local identity keystore (identity.p12),
                 not an account. It can also be supplied via ITEMS_SYNC_PASSWORD.

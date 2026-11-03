@@ -64,6 +64,12 @@ public final class SyncForegroundService extends Service {
     private volatile boolean started;
     private volatile int lastOnlineCount = -1;
 
+    public static boolean isRunning() {
+        return running;
+    }
+
+    private static volatile boolean running;
+
     public final class LocalBinder extends Binder {
         public SyncForegroundService service() {
             return SyncForegroundService.this;
@@ -81,6 +87,7 @@ public final class SyncForegroundService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        running = true;
         startForeground(NOTIFICATION_ID, notification("正在启动"),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
         if (!started) {
@@ -377,6 +384,7 @@ public final class SyncForegroundService extends Service {
     @Override
     public void onDestroy() {
         started = false;
+        running = false;
         closeNode();
         scheduler.shutdownNow();
         executor.shutdownNow();

@@ -1,8 +1,7 @@
-package github.gtouming.itemsync.desktop;
+package github.gtouming.itemsync.platform.desktop;
 
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.SyncRootId;
-import github.gtouming.itemsync.platform.desktop.PathSupport;
 
 import java.io.IOException;
 import java.io.Reader;

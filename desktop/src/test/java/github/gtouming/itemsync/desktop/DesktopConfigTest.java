@@ -2,6 +2,7 @@ package github.gtouming.itemsync.desktop;
 
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.SyncRootId;
+import github.gtouming.itemsync.platform.desktop.DesktopConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

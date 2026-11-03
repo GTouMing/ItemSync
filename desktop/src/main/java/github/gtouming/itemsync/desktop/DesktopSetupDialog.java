@@ -2,6 +2,7 @@ package github.gtouming.itemsync.desktop;
 
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.SyncRootId;
+import github.gtouming.itemsync.platform.desktop.DesktopConfig;
 import github.gtouming.itemsync.platform.desktop.PathSupport;
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
