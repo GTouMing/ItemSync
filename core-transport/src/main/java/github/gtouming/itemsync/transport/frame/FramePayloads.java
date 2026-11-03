@@ -41,6 +41,7 @@ public final class FramePayloads {
         JsonObject json = new JsonObject();
         json.addProperty("nodeId", hello.nodeId().value());
         json.addProperty("protocolVersion", hello.protocolVersion());
+        json.addProperty("groupId", hello.groupId().value());
         json.addProperty("certificateFingerprint", hello.certificateFingerprint());
         return toBytes(json);
     }
@@ -50,7 +51,8 @@ public final class FramePayloads {
         return new Hello(
                 NodeId.of(string(json, "nodeId")),
                 integer(json, "protocolVersion"),
-                string(json, "certificateFingerprint"));
+                string(json, "certificateFingerprint"),
+                GroupId.parse(string(json, "groupId")));
     }
 
     public static byte[] encodePing(Ping ping) {

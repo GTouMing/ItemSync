@@ -1,5 +1,6 @@
 package github.gtouming.itemsync.transport.net;
 
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.NodeId;
 import github.gtouming.itemsync.transport.frame.Frame;
 import github.gtouming.itemsync.transport.frame.FrameCodec;
@@ -24,6 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class TlsTransportTest {
 
+    private static final GroupId GROUP = GroupId.parse("group001");
+
     private static TlsIdentity serverIdentity;
     private static TlsIdentity clientIdentity;
 
@@ -41,6 +44,8 @@ class TlsTransportTest {
         CountDownLatch clientClosed = new CountDownLatch(1);
         AtomicLong pongNonce = new AtomicLong();
         AtomicInteger serverFrames = new AtomicInteger();
+        AtomicReference<Hello> serverHello = new AtomicReference<>();
+        AtomicReference<Hello> clientHelloAck = new AtomicReference<>();
         AtomicReference<IOException> serverError = new AtomicReference<>();
         AtomicReference<IOException> clientError = new AtomicReference<>();
 
@@ -49,8 +54,10 @@ class TlsTransportTest {
             public void onFrame(FrameConnection connection, Frame frame) {
                 serverFrames.incrementAndGet();
                 if (frame.type() == FrameType.HELLO) {
+                    serverHello.set(FramePayloads.decodeHello(frame.payload()));
                     connection.send(new Frame(FrameType.HELLO_ACK, FramePayloads.encodeHello(new Hello(
-                            NodeId.of("server"), FrameCodec.PROTOCOL_VERSION, serverIdentity.fingerprint()))));
+                            NodeId.of("server"), FrameCodec.PROTOCOL_VERSION,
+                            serverIdentity.fingerprint(), GROUP))));
                 } else if (frame.type() == FrameType.PING) {
                     long nonce = FramePayloads.decodePing(frame.payload()).nonce();
                     connection.send(new Frame(FrameType.PONG, FramePayloads.encodePong(new Pong(nonce))));
@@ -76,6 +83,7 @@ class TlsTransportTest {
                 @Override
                 public void onFrame(FrameConnection connection, Frame frame) {
                     if (frame.type() == FrameType.HELLO_ACK) {
+                        clientHelloAck.set(FramePayloads.decodeHello(frame.payload()));
                         helloAck.countDown();
                     } else if (frame.type() == FrameType.PONG) {
                         pongNonce.set(FramePayloads.decodePong(frame.payload()).nonce());
@@ -97,7 +105,8 @@ class TlsTransportTest {
             try (TlsTransportClient client = TlsTransportClient.connect(
                     "127.0.0.1", server.port(), clientIdentity, serverIdentity.fingerprint(), clientHandler)) {
                 client.send(new Frame(FrameType.HELLO, FramePayloads.encodeHello(new Hello(
-                        NodeId.of("client"), FrameCodec.PROTOCOL_VERSION, clientIdentity.fingerprint()))));
+                        NodeId.of("client"), FrameCodec.PROTOCOL_VERSION,
+                        clientIdentity.fingerprint(), GROUP))));
 
                 if (!helloAck.await(5, TimeUnit.SECONDS)) {
                     throw new AssertionError("no HELLO_ACK"
@@ -116,6 +125,8 @@ class TlsTransportTest {
                             + ", serverClosed=" + (serverClosed.getCount() == 0));
                 }
                 assertEquals(7L, pongNonce.get());
+                assertEquals(GROUP, serverHello.get().groupId(), "HELLO lost its group id");
+                assertEquals(GROUP, clientHelloAck.get().groupId(), "HELLO_ACK lost its group id");
             }
         }
     }

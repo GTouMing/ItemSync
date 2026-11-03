@@ -18,9 +18,19 @@ class FramePayloadsTest {
 
     @Test
     void roundTripsHello() {
-        Hello hello = new Hello(NodeId.of("node-a"), FrameCodec.PROTOCOL_VERSION, "abc");
+        Hello hello = new Hello(NodeId.of("node-a"), FrameCodec.PROTOCOL_VERSION, "abc",
+                GroupId.parse("group001"));
 
         assertEquals(hello, FramePayloads.decodeHello(FramePayloads.encodeHello(hello)));
+    }
+
+    @Test
+    void rejectsHelloWithoutGroupId() {
+        byte[] payload = ("{\"nodeId\":\"node-a\",\"protocolVersion\":"
+                + FrameCodec.PROTOCOL_VERSION + ",\"certificateFingerprint\":\"abc\"}")
+                .getBytes(StandardCharsets.UTF_8);
+
+        assertThrows(IllegalArgumentException.class, () -> FramePayloads.decodeHello(payload));
     }
 
     @Test

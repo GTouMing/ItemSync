@@ -167,8 +167,8 @@ public final class SyncNode implements AutoCloseable {
         if (pairingTrust != null) {
             try {
                 pairing = new TlsTransportServer(identity, new PairingTrustManager(), 0,
-                        new PairingStatusServer(groupId, nodeId, deviceId,
-                                identity.fingerprint(), pairingTrust),
+                        new PairingStatusServer(Compat.map(groupId, pairingTrust), nodeId,
+                                deviceId, identity.fingerprint()),
                         null, PAIRING_READ_TIMEOUT);
                 pairing.start();
                 pairingPort = pairing.port();
@@ -231,7 +231,8 @@ public final class SyncNode implements AutoCloseable {
 
     public void revokeClient(String fingerprint) {
         trustManager.revoke(groupId, fingerprint);
-        server.closeConnections();
+        // group scoped: revoking this group must not close another group's connections
+        server.closeConnections(groupId, fingerprint);
     }
 
     public void removePeer(NodeId peerNodeId) {
@@ -256,7 +257,7 @@ public final class SyncNode implements AutoCloseable {
     }
 
     public boolean hasInboundConnection(String fingerprint) {
-        return server.hasConnection(fingerprint);
+        return server.hasConnection(groupId, fingerprint);
     }
 
     public NodeId nodeId() {

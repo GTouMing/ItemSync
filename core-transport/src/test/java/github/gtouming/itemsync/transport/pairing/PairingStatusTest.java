@@ -17,9 +17,11 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.time.Duration;
+import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -30,6 +32,55 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PairingStatusTest {
 
     private static final GroupId GROUP = GroupId.parse("group001");
+
+    @Test
+    void routesEachRequestToTheGroupOfTheSharedEndpoint() throws Exception {
+        TlsIdentity serverIdentity = TlsIdentity.generate("server");
+        TlsIdentity clientIdentity = TlsIdentity.generate("client");
+        GroupId other = GroupId.parse("group002");
+
+        PairingStatusServer handler = new PairingStatusServer(
+                Map.of(GROUP, byFingerprint(fingerprint -> true),
+                        other, byFingerprint(fingerprint -> false)),
+                NodeId.of("server-node"), DeviceId.of("server-device"),
+                serverIdentity.fingerprint());
+
+        try (TlsTransportServer server = new TlsTransportServer(
+                serverIdentity, new PairingTrustManager(), 0, handler)) {
+            server.start();
+
+            PairingStatusClient.Result first = query(server.port(), clientIdentity,
+                    serverIdentity.fingerprint(), GROUP);
+            PairingStatusClient.Result second = query(server.port(), clientIdentity,
+                    serverIdentity.fingerprint(), other);
+
+            assertEquals(GROUP, first.response().groupId());
+            assertTrue(first.response().trustsPeer(), "the shared endpoint answered for another group");
+            assertEquals(other, second.response().groupId());
+            assertFalse(second.response().trustsPeer(),
+                    "the shared endpoint answered for another group");
+        }
+    }
+
+    @Test
+    void doesNotAnswerForAGroupTheSharedEndpointDoesNotServe() throws Exception {
+        TlsIdentity serverIdentity = TlsIdentity.generate("server");
+        TlsIdentity clientIdentity = TlsIdentity.generate("client");
+
+        PairingStatusServer handler = new PairingStatusServer(
+                Map.of(GROUP, byFingerprint(fingerprint -> true),
+                        GroupId.parse("group002"), byFingerprint(fingerprint -> true)),
+                NodeId.of("server-node"), DeviceId.of("server-device"),
+                serverIdentity.fingerprint());
+
+        try (TlsTransportServer server = new TlsTransportServer(
+                serverIdentity, new PairingTrustManager(), 0, handler)) {
+            server.start();
+
+            assertThrows(IOException.class, () -> query(server.port(), clientIdentity,
+                    serverIdentity.fingerprint(), GroupId.parse("group003")));
+        }
+    }
 
     @Test
     void reportsThatTheServerTrustsTheClient() throws Exception {
@@ -178,6 +229,10 @@ class PairingStatusTest {
                                               PairingTrustProvider provider) {
         return new PairingStatusServer(GROUP, NodeId.of("server-node"),
                 DeviceId.of("server-device"), identity.fingerprint(), provider);
+    }
+
+    private static PairingTrustProvider byFingerprint(Predicate<String> trusts) {
+        return (group, fingerprint) -> trusts.test(fingerprint);
     }
 
     private static PairingStatusClient.Result query(int port, TlsIdentity client,
