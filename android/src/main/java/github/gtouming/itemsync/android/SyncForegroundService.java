@@ -70,6 +70,11 @@ public final class SyncForegroundService extends Service {
     }
 
     private static volatile boolean running;
+    private static volatile SyncForegroundService instance;
+
+    public static SyncForegroundService instance() {
+        return instance;
+    }
 
     public final class LocalBinder extends Binder {
         public SyncForegroundService service() {
@@ -80,6 +85,7 @@ public final class SyncForegroundService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        instance = this;
         NotificationManager manager = getSystemService(NotificationManager.class);
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID, "ItemSync 同步", NotificationManager.IMPORTANCE_LOW);
@@ -382,6 +388,9 @@ public final class SyncForegroundService extends Service {
 
     @Override
     public void onDestroy() {
+        if (instance == this) {
+            instance = null;
+        }
         started = false;
         running = false;
         closeNode();

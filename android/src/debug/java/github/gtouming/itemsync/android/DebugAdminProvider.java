@@ -15,6 +15,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
 import github.gtouming.itemsync.domain.identity.GroupId;
+import github.gtouming.itemsync.sync.trust.PeerTrustCoordinator;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -38,6 +39,7 @@ public final class DebugAdminProvider extends ContentProvider {
             JsonObject data;
             switch (method) {
                 case "status" -> data = status();
+                case "peers" -> data = peers();
                 case "config.get" -> data = configGet(args);
                 case "config.set" -> data = configSet(args);
                 case "trust.list" -> data = trustList();
@@ -61,6 +63,37 @@ public final class DebugAdminProvider extends ContentProvider {
         data.addProperty("debuggable", (getContext().getApplicationInfo().flags
                 & ApplicationInfo.FLAG_DEBUGGABLE) != 0);
         data.addProperty("running", SyncForegroundService.isRunning());
+        return data;
+    }
+
+    private JsonObject peers() {
+        JsonObject data = new JsonObject();
+        SyncForegroundService service = SyncForegroundService.instance();
+        data.addProperty("running", service != null && service.isReady());
+        JsonArray peers = new JsonArray();
+        if (service != null) {
+            for (PeerTrustCoordinator.PeerView view : service.peerViews()) {
+                JsonObject peer = new JsonObject();
+                peer.addProperty("deviceId", view.presence().peer().deviceId().value());
+                peer.addProperty("nodeId", view.presence().peer().nodeId().value());
+                JsonArray addresses = new JsonArray();
+                for (java.net.InetAddress address : view.presence().peer().addresses()) {
+                    addresses.add(address.getHostAddress());
+                }
+                peer.add("addresses", addresses);
+                peer.addProperty("port", view.presence().peer().port());
+                peer.addProperty("pairingPort", view.presence().peer().pairingPort());
+                peer.addProperty("fingerprint", view.presence().peer().fingerprint());
+                peer.addProperty("locallyTrusted", view.locallyTrusted());
+                peer.addProperty("remoteTrust", view.remoteTrust().name());
+                peer.addProperty("connected", view.connected());
+                peer.addProperty("remoteTrustError",
+                        view.remoteTrustError() == null ? "" : view.remoteTrustError());
+                peer.addProperty("lastSeen", view.presence().lastSeen().toString());
+                peers.add(peer);
+            }
+        }
+        data.add("peers", peers);
         return data;
     }
 

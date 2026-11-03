@@ -37,19 +37,25 @@ public final class PairingStatusServer implements FrameHandler {
             connection.close();
             return;
         }
+        boolean responded = false;
         try {
             PairingStatusRequest request = FramePayloads.decodePairingStatusRequest(frame.payload());
             if (!groupId.equals(request.groupId())) {
                 return;
             }
+            boolean trusts = trust.trusts(groupId, connection.peerFingerprint());
             PairingStatusResponse response = new PairingStatusResponse(groupId, nodeId, deviceId,
-                    fingerprint, trust.trusts(groupId, connection.peerFingerprint()));
+                    fingerprint, trusts);
             connection.send(new Frame(FrameType.PAIRING_STATUS_ACK,
                     FramePayloads.encodePairingStatusResponse(response)));
+            responded = true;
+            // The client closes after receiving the response; closing here races the write.
         } catch (RuntimeException ignored) {
             // invalid request or the connection is already broken
         } finally {
-            connection.close();
+            if (!responded) {
+                connection.close();
+            }
         }
     }
 
