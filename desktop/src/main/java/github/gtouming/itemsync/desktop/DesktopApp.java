@@ -15,6 +15,9 @@ import github.gtouming.itemsync.transport.discovery.PresenceTracker;
 import github.gtouming.itemsync.transport.tls.TlsIdentity;
 import javafx.application.Application;
 import javafx.application.Platform;
+import javafx.animation.Animation;
+import javafx.animation.KeyFrame;
+import javafx.animation.Timeline;
 import javafx.event.ActionEvent;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
@@ -34,6 +37,7 @@ import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 import javafx.stage.Stage;
+import javafx.util.Duration;
 
 import java.awt.AWTException;
 import java.awt.Color;
@@ -758,6 +762,12 @@ public final class DesktopApp extends Application {
             event.consume();
             refresh.run();
         });
+
+        Timeline autoRefresh = new Timeline(
+                new KeyFrame(Duration.seconds(3), event -> refresh.run()));
+        autoRefresh.setCycleCount(Animation.INDEFINITE);
+        autoRefresh.play();
+        dialog.setOnHidden(event -> autoRefresh.stop());
 
         dialog.showAndWait();
     }
