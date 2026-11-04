@@ -135,6 +135,15 @@ final class SqlItemRepository implements ItemRepository {
         });
     }
 
+    @Override
+    public void deleteByGroup(GroupId groupId) {
+        session.runAtomically(() -> {
+            session.update("DELETE FROM item_vector WHERE group_id = ?", groupId.value());
+            session.update("DELETE FROM item_change WHERE group_id = ?", groupId.value());
+            session.update("DELETE FROM item WHERE group_id = ?", groupId.value());
+        });
+    }
+
     private void replaceVector(GroupId groupId, LogicalPath path, VersionVector vector) {
         session.update("DELETE FROM item_vector WHERE group_id = ? AND logical_path = ?",
                 groupId.value(), path.value());

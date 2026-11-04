@@ -168,8 +168,30 @@ public record DesktopConfig(Path dataDir, List<DesktopGroup> groups,
     }
 
     /**
-     * Renames a group. Root changes are not supported by this slice, so a group keeps the
-     * root it was created with.
+     * Replaces the sync root of one group. The caller must stop the group and reset its
+     * metadata first; only the persisted configuration is changed here.
+     */
+    public DesktopConfig changeRoot(GroupId id, Path root) throws IOException {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(root, "root");
+        List<DesktopGroup> updated = new ArrayList<>(groups.size());
+        boolean found = false;
+        for (DesktopGroup existing : groups) {
+            if (existing.id().equals(id)) {
+                updated.add(new DesktopGroup(existing.id(), existing.name(), root));
+                found = true;
+            } else {
+                updated.add(existing);
+            }
+        }
+        if (!found) {
+            throw new IllegalArgumentException("unknown sync group: " + id.value());
+        }
+        return withGroups(updated);
+    }
+
+    /**
+     * Renames a group. Root changes use {@link #changeRoot} and are destructive.
      */
     public DesktopConfig renameGroup(GroupId id, String name) throws IOException {
         Objects.requireNonNull(id, "id");

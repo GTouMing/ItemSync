@@ -15,6 +15,7 @@ import github.gtouming.itemsync.domain.model.GroupDevice;
 import github.gtouming.itemsync.domain.model.Item;
 import github.gtouming.itemsync.domain.model.Peer;
 import github.gtouming.itemsync.domain.model.SyncGroup;
+import github.gtouming.itemsync.domain.model.SyncRoot;
 import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.Tombstone;
 import github.gtouming.itemsync.domain.model.Trigger;
@@ -72,6 +73,8 @@ public interface MetadataStore extends AutoCloseable {
 
         void updateLogicalClock(GroupId id, long logicalClock);
 
+        void updateRoot(GroupId id, SyncRoot root);
+
         void delete(GroupId id);
     }
 
@@ -84,6 +87,8 @@ public interface MetadataStore extends AutoCloseable {
         List<GroupDevice> findByGroup(GroupId groupId);
 
         void delete(GroupId groupId, DeviceId deviceId);
+
+        void deleteByGroup(GroupId groupId);
     }
 
     interface ItemRepository {
@@ -107,6 +112,8 @@ public interface MetadataStore extends AutoCloseable {
         long currentSequence(GroupId groupId);
 
         void delete(ItemId id);
+
+        void deleteByGroup(GroupId groupId);
     }
 
     interface VersionRepository {
@@ -118,6 +125,8 @@ public interface MetadataStore extends AutoCloseable {
         List<FileVersion> recent(ItemId itemId, int limit);
 
         int deleteOlderThan(ItemId itemId, int keepNewest);
+
+        void deleteByGroup(GroupId groupId);
     }
 
     interface TombstoneRepository {
@@ -129,6 +138,8 @@ public interface MetadataStore extends AutoCloseable {
         List<Tombstone> page(String cursor, int limit);
 
         void delete(ItemId itemId);
+
+        void deleteByGroup(GroupId groupId);
     }
 
     interface ConflictRepository {
@@ -142,6 +153,8 @@ public interface MetadataStore extends AutoCloseable {
         List<Conflict> findByItem(ItemId itemId);
 
         void resolve(ConflictId id, Instant resolvedAt);
+
+        void deleteByGroup(GroupId groupId);
     }
 
     interface TriggerRepository {
@@ -155,6 +168,8 @@ public interface MetadataStore extends AutoCloseable {
         List<Trigger> due(Instant now, int limit);
 
         void delete(TriggerId id);
+
+        void deleteByGroup(GroupId groupId);
     }
 
     interface SyncRunRepository {
@@ -166,6 +181,8 @@ public interface MetadataStore extends AutoCloseable {
         void update(SyncRun run);
 
         List<SyncRun> recent(GroupId groupId, int limit);
+
+        void deleteByGroup(GroupId groupId);
     }
 
     interface CursorRepository {
@@ -177,5 +194,7 @@ public interface MetadataStore extends AutoCloseable {
         long pushSequence(GroupId groupId, NodeId peerNodeId);
 
         void updatePush(GroupId groupId, NodeId peerNodeId, long sequence);
+
+        void deleteByGroup(GroupId groupId);
     }
 }

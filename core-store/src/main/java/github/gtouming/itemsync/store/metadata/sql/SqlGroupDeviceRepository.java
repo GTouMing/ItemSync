@@ -50,6 +50,11 @@ final class SqlGroupDeviceRepository implements GroupDeviceRepository {
                 groupId.value(), deviceId.value());
     }
 
+    @Override
+    public void deleteByGroup(GroupId groupId) {
+        session.update("DELETE FROM group_device WHERE group_id = ?", groupId.value());
+    }
+
     private static GroupDevice map(RowCursor cursor) {
         return new GroupDevice(
                 GroupId.parse(cursor.getString("group_id")),

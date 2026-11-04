@@ -49,6 +49,13 @@ final class SqlSyncGroupRepository implements SyncGroupRepository {
     }
 
     @Override
+    public void updateRoot(GroupId id, SyncRoot root) {
+        session.update("UPDATE sync_group SET physical_path = ?, display_name = ?, "
+                        + "ignore_snapshot = ? WHERE id = ?",
+                root.physicalPath(), root.displayName(), root.ignoreSnapshot(), id.value());
+    }
+
+    @Override
     public void delete(GroupId id) {
         session.update("DELETE FROM sync_group WHERE id = ?", id.value());
     }

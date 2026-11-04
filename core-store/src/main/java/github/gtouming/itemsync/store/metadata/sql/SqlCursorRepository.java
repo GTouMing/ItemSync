@@ -32,6 +32,11 @@ final class SqlCursorRepository implements CursorRepository {
         update(groupId, peerNodeId, "push_sequence", sequence);
     }
 
+    @Override
+    public void deleteByGroup(GroupId groupId) {
+        session.update("DELETE FROM sync_cursor WHERE group_id = ?", groupId.value());
+    }
+
     private long sequence(GroupId groupId, NodeId peerNodeId, String column) {
         return session.queryOne(
                 "SELECT " + column + " FROM sync_cursor WHERE group_id = ? AND node_id = ?",

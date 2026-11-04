@@ -3,6 +3,7 @@ package github.gtouming.itemsync.store.metadata.sql;
 import github.gtouming.itemsync.domain.compat.Compat;
 
 import github.gtouming.itemsync.domain.identity.ConflictId;
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.ItemId;
 import github.gtouming.itemsync.domain.identity.LogicalPath;
 import github.gtouming.itemsync.domain.identity.VersionId;
@@ -65,6 +66,12 @@ final class SqlConflictRepository implements ConflictRepository {
     @Override
     public void resolve(ConflictId id, Instant resolvedAt) {
         session.update("UPDATE conflict SET resolved_at = ? WHERE id = ?", resolvedAt, id.value());
+    }
+
+    @Override
+    public void deleteByGroup(GroupId groupId) {
+        session.update("DELETE FROM conflict WHERE item_id IN "
+                + "(SELECT id FROM item WHERE group_id = ?)", groupId.value());
     }
 
     private static Conflict map(RowCursor cursor) {

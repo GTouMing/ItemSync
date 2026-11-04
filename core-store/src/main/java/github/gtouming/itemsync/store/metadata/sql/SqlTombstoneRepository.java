@@ -1,5 +1,6 @@
 package github.gtouming.itemsync.store.metadata.sql;
 
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.ItemId;
 import github.gtouming.itemsync.domain.identity.NodeId;
 import github.gtouming.itemsync.domain.model.Tombstone;
@@ -55,6 +56,12 @@ final class SqlTombstoneRepository implements TombstoneRepository {
     @Override
     public void delete(ItemId itemId) {
         session.update("DELETE FROM tombstone WHERE item_id = ?", itemId.value());
+    }
+
+    @Override
+    public void deleteByGroup(GroupId groupId) {
+        session.update("DELETE FROM tombstone WHERE item_id IN "
+                + "(SELECT id FROM item WHERE group_id = ?)", groupId.value());
     }
 
     private static Tombstone map(RowCursor cursor) {

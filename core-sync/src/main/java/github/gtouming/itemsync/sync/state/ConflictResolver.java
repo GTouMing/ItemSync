@@ -44,6 +44,7 @@ public final class ConflictResolver {
     private final Path syncRoot;
     private final MetadataStore store;
     private final PhysicalPathResolver paths;
+    private final GroupId groupId;
     private final NodeId localNode;
     private final Supplier<Instant> clock;
     private final LocalStateWriter writer;
@@ -53,6 +54,7 @@ public final class ConflictResolver {
         this.syncRoot = Objects.requireNonNull(syncRoot, "syncRoot");
         this.store = Objects.requireNonNull(store, "store");
         this.paths = Objects.requireNonNull(paths, "paths");
+        this.groupId = Objects.requireNonNull(groupId, "groupId");
         this.localNode = Objects.requireNonNull(localNode, "localNode");
         this.clock = Objects.requireNonNull(clock, "clock");
         this.writer = new LocalStateWriter(store, groupId, clock);
@@ -62,7 +64,9 @@ public final class ConflictResolver {
         List<ConflictView> views = new ArrayList<>();
         for (Conflict conflict : store.conflicts().findOpen(limit)) {
             Item item = store.items().findById(conflict.itemId()).orElse(null);
-            if (item == null) {
+            // Conflicts are stored per item; another group's conflict does not belong to
+            // this root and must never be listed or resolved here (ADR-0035).
+            if (item == null || !item.groupId().equals(groupId)) {
                 continue;
             }
             views.add(new ConflictView(conflict.id(), item.logicalPath(),
@@ -82,6 +86,9 @@ public final class ConflictResolver {
         }
         Item item = store.items().findById(conflict.itemId())
                 .orElseThrow(() -> new IOException("item not found: " + conflict.itemId().value()));
+        if (!item.groupId().equals(groupId)) {
+            throw new IOException("conflict does not belong to this group: " + id.value());
+        }
         switch (resolution) {
             case KEEP_LOCAL -> keepLocal(conflict, item);
             case KEEP_REMOTE -> keepRemote(conflict, item);

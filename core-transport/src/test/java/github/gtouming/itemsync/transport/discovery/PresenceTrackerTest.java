@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -56,6 +57,26 @@ class PresenceTrackerTest {
         tracker.onPeerLost(peer);
 
         assertTrue(tracker.online().isEmpty());
+    }
+
+    @Test
+    void notifiesListenersWhenPeersAppearAndDisappear() throws Exception {
+        PresenceTracker tracker = new PresenceTracker(GROUP, SELF, () -> T0);
+        AtomicInteger notifications = new AtomicInteger();
+        AutoCloseable handle = tracker.addListener(notifications::incrementAndGet);
+        DiscoveredPeer peer = peer("node-a", "device-a", Set.of(GROUP));
+
+        tracker.onPeerDiscovered(peer);
+        assertEquals(1, notifications.get(), "a new peer must notify");
+        tracker.onPeerDiscovered(peer);
+        assertEquals(1, notifications.get(), "an unchanged announcement must not notify");
+
+        tracker.onPeerLost(peer);
+        assertEquals(2, notifications.get(), "a lost peer must notify");
+
+        handle.close();
+        tracker.onPeerDiscovered(peer);
+        assertEquals(2, notifications.get(), "a closed listener must not be called");
     }
 
     private static DiscoveredPeer peer(String nodeId, String deviceId, Set<GroupId> groupIds) {

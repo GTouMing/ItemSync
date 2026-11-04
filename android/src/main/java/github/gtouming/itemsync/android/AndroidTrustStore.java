@@ -56,10 +56,29 @@ public final class AndroidTrustStore implements PeerTrustStore {
 
     @Override
     public synchronized void retainOnly(GroupId group) throws IOException {
-        String prefix = keyPrefix(group);
+        retainOnly(List.of(group));
+    }
+
+    /**
+     * Drops the trust of every group that is not in {@code groups}; one Android device may
+     * serve several groups and keeps the pairs of all of them (ADR-0035).
+     */
+    public synchronized void retainOnly(java.util.Collection<GroupId> groups) throws IOException {
+        Objects.requireNonNull(groups, "groups");
+        List<String> prefixes = new ArrayList<>(groups.size());
+        for (GroupId group : groups) {
+            prefixes.add(keyPrefix(Objects.requireNonNull(group, "group")));
+        }
         List<String> stale = new ArrayList<>();
         for (String existing : prefs.getAll().keySet()) {
-            if (!existing.startsWith(prefix)) {
+            boolean keep = false;
+            for (String prefix : prefixes) {
+                if (existing.startsWith(prefix)) {
+                    keep = true;
+                    break;
+                }
+            }
+            if (!keep) {
                 stale.add(existing);
             }
         }
