@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="itemsync_paper">#F4F1EA</color>
+    <color name="itemsync_surface">#FBFAF6</color>
+    <color name="itemsync_ink">#171B1E</color>
+    <color name="itemsync_muted">#5E666B</color>
+    <color name="itemsync_copper">#B45309</color>
+    <color name="itemsync_copper_text">#8A4B08</color>
+    <color name="itemsync_copper_soft">#F0E3D3</color>
+    <color name="itemsync_hairline">#D9D3C7</color>
+    <color name="itemsync_live">#0F766E</color>
+    <color name="itemsync_warning">#B54708</color>
+    <color name="itemsync_error">#B42318</color>
+    <color name="itemsync_idle">#98A2A8</color>
+</resources>

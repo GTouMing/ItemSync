@@ -308,6 +308,20 @@ public final class SyncForegroundService extends Service {
         }
     }
 
+    static boolean isRunningAndReady() {
+        SyncForegroundService service = instance;
+        return running && service != null && service.isReady();
+    }
+
+    static boolean requestSyncIfReady(GroupId groupId) {
+        SyncForegroundService service = instance;
+        if (!running || service == null || !service.isReady()) {
+            return false;
+        }
+        service.requestSync(groupId);
+        return true;
+    }
+
     /**
      * The stored sync rules of one group. A rule change only reaches the running
      * {@link TriggerEngine} after the service restarts; callers must say so.
@@ -440,9 +454,8 @@ public final class SyncForegroundService extends Service {
             }
             // Disabled groups keep their trust for a later re-enable.
             trustStore.retainOnly(allGroupIds);
-            List<AndroidGroup> groups = allGroups.stream()
-                    .filter(AndroidGroup::enabled)
-                    .toList();
+            List<AndroidGroup> groups = Compat.toList(allGroups.stream()
+                    .filter(AndroidGroup::enabled));
             if (groups.isEmpty()) {
                 updateNotification("没有启用的同步组，请在 ItemSync 中启用");
                 return;
@@ -718,7 +731,8 @@ public final class SyncForegroundService extends Service {
         PendingIntent pending = PendingIntent.getActivity(this, 0, intent,
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         return new Notification.Builder(this, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.stat_notify_sync)
+                .setSmallIcon(R.drawable.ic_itemsync_notification)
+                .setColor(getColor(R.color.itemsync_copper))
                 .setContentTitle("ItemSync")
                 .setContentText(text)
                 .setOngoing(true)

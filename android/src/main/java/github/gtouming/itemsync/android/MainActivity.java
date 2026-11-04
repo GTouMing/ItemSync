@@ -8,23 +8,32 @@ import android.content.ComponentName;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
+import android.graphics.Insets;
+import android.graphics.Typeface;
+import android.graphics.drawable.Drawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.StateListDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.text.InputType;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.AdapterView;
+import android.view.WindowInsets;
+import android.view.WindowInsetsController;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.ScrollView;
-import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -66,7 +75,10 @@ public final class MainActivity extends Activity {
     private TextView groupIdLabel;
     private TextView groupNameLabel;
     private TextView groupRootLabel;
+    private TextView serviceStateLabel;
+    private View serviceStateDot;
     private final List<AndroidGroup> groups = new ArrayList<>();
+    private final List<TextView> groupChips = new ArrayList<>();
     private GroupId selectedGroupId;
 
     private SyncForegroundService boundService;
@@ -80,6 +92,7 @@ public final class MainActivity extends Activity {
         public void onServiceConnected(ComponentName name, IBinder binder) {
             bound = true;
             boundService = ((SyncForegroundService.LocalBinder) binder).service();
+            renderServiceState();
             if (!boundService.isReady()) {
                 pendingRules = false;
                 Toast.makeText(MainActivity.this, "同步服务尚未就绪", Toast.LENGTH_SHORT).show();
@@ -98,6 +111,7 @@ public final class MainActivity extends Activity {
             bound = false;
             boundService = null;
             pendingRules = false;
+            renderServiceState();
             if (deviceDialog != null) {
                 deviceDialog.dismiss();
                 deviceDialog = null;
@@ -121,6 +135,18 @@ public final class MainActivity extends Activity {
     }
 
     @Override
+    protected void onPostCreate(Bundle state) {
+        super.onPostCreate(state);
+        configureSystemBars();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        renderServiceState();
+    }
+
+    @Override
     protected void onDestroy() {
         if (deviceDialog != null) {
             deviceDialog.dismiss();
@@ -139,23 +165,27 @@ public final class MainActivity extends Activity {
     }
 
     private void showSetup() {
-        LinearLayout layout = vertical();
-        layout.addView(hint("首次启动：设置本机密码。它只锁定界面与配置，后台同步不需要它；"
-                + "忘记只能清除应用数据。"));
-        EditText password = passwordField(layout, "本机密码");
-        EditText confirm = passwordField(layout, "确认密码");
-        TextView error = hint("");
-        layout.addView(error);
-        Button create = new Button(this);
-        create.setText("设置并继续");
+        LinearLayout layout = screen();
+        layout.addView(brandHeader(false));
+        layout.addView(spacer());
+        LinearLayout card = card();
+        card.addView(eyebrow("首次启动"));
+        card.addView(title("设置本机密码"));
+        card.addView(hint("本机密码只锁定界面与配置，后台同步不需要它。忘记后只能清除应用数据。"));
+        EditText password = passwordField(card, "本机密码");
+        EditText confirm = passwordField(card, "确认密码");
+        TextView error = errorLabel();
+        error.setVisibility(View.GONE);
+        card.addView(error);
+        Button create = primaryButton("设置并继续");
         create.setOnClickListener(view -> {
             String first = password.getText().toString();
             if (first.isEmpty()) {
-                error.setText("密码不能为空");
+                setError(error, "密码不能为空");
                 return;
             }
             if (!first.equals(confirm.getText().toString())) {
-                error.setText("两次输入不一致");
+                setError(error, "两次输入不一致");
                 return;
             }
             create.setEnabled(false);
@@ -171,27 +201,35 @@ public final class MainActivity extends Activity {
                 } catch (RuntimeException e) {
                     runOnUiThread(() -> {
                         create.setEnabled(true);
-                        error.setText("设置失败: " + message(e));
+                        setError(error, "设置失败: " + message(e));
                     });
                 }
             }).start();
         });
-        layout.addView(create);
-        setContentView(scroll(layout));
+        card.addView(create);
+        layout.addView(card);
+        layout.addView(spacer());
+        layout.addView(footerNote());
+        showScreen(layout);
     }
 
     private void showUnlock() {
-        LinearLayout layout = vertical();
-        layout.addView(hint("输入本机密码以查看同步配置。后台同步已在独立服务中运行。"));
-        EditText password = passwordField(layout, "本机密码");
-        TextView error = hint("");
-        layout.addView(error);
-        Button unlock = new Button(this);
-        unlock.setText("解锁");
+        LinearLayout layout = screen();
+        layout.addView(brandHeader(false));
+        layout.addView(spacer());
+        LinearLayout card = card();
+        card.addView(eyebrow("已锁定"));
+        card.addView(title("输入本机密码"));
+        card.addView(hint("后台同步不受影响。解锁后才能查看同步组、同步根与设备信任。"));
+        EditText password = passwordField(card, "本机密码");
+        TextView error = errorLabel();
+        error.setVisibility(View.GONE);
+        card.addView(error);
+        Button unlock = primaryButton("解锁");
         unlock.setOnClickListener(view -> {
             String value = password.getText().toString();
             if (value.isEmpty()) {
-                error.setText("密码不能为空");
+                setError(error, "密码不能为空");
                 return;
             }
             unlock.setEnabled(false);
@@ -203,19 +241,22 @@ public final class MainActivity extends Activity {
                         password.setText("");
                         showConfig();
                     } else {
-                        error.setText("密码不正确");
+                        setError(error, "密码不正确");
                     }
                 });
             }).start();
         });
-        layout.addView(unlock);
-        setContentView(scroll(layout));
+        card.addView(unlock);
+        layout.addView(card);
+        layout.addView(spacer());
+        layout.addView(footerNote());
+        showScreen(layout);
     }
 
     private void showConfig() {
-        LinearLayout layout = vertical();
-        layout.addView(hint("每个同步组有独立的同步根与设备信任列表；组 ID 是发现键，添加后不可修改。\n"
-                + "组名只在本机显示；同一设备可以同时加入多个组。"));
+        LinearLayout layout = screen();
+        layout.addView(brandHeader(true));
+        groupChips.clear();
         try {
             groups.clear();
             groups.addAll(config.groups());
@@ -227,124 +268,535 @@ public final class MainActivity extends Activity {
                 || groups.stream().noneMatch(group -> group.id().equals(selectedGroupId))) {
             selectedGroupId = groups.isEmpty() ? null : groups.get(0).id();
         }
+
         if (groups.isEmpty()) {
-            layout.addView(hint("未配置同步组。点击“添加同步组”创建或加入一个组。"));
+            layout.addView(emptyGroupsCard());
         } else {
-            Spinner spinner = new Spinner(this);
-            List<String> labels = new ArrayList<>();
-            int selection = 0;
-            for (int index = 0; index < groups.size(); index++) {
-                labels.add(groupText(groups.get(index)));
-                if (groups.get(index).id().equals(selectedGroupId)) {
-                    selection = index;
-                }
-            }
-            ArrayAdapter<String> adapter = new ArrayAdapter<>(
-                    this, android.R.layout.simple_spinner_item, labels);
-            adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-            spinner.setAdapter(adapter);
-            spinner.setSelection(selection);
-            spinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-                @Override
-                public void onItemSelected(AdapterView<?> parent, View view, int position,
-                                           long id) {
-                    selectedGroupId = groups.get(position).id();
-                    renderSelectedGroup();
-                }
-
-                @Override
-                public void onNothingSelected(AdapterView<?> parent) {
-                    // Keep the last selection; the list is never empty here.
-                }
-            });
-            layout.addView(spinner);
-
-            groupIdLabel = new TextView(this);
-            groupIdLabel.setTextIsSelectable(true);
-            layout.addView(hint("组 ID"));
-            layout.addView(groupIdLabel);
-            groupNameLabel = new TextView(this);
-            layout.addView(hint("组名"));
-            layout.addView(groupNameLabel);
-            groupRootLabel = new TextView(this);
-            groupRootLabel.setTextIsSelectable(true);
-            layout.addView(hint("同步根"));
-            layout.addView(groupRootLabel);
-            renderSelectedGroup();
+            layout.addView(sectionLabel("同步组"));
+            layout.addView(groupChipStrip());
+            View status = statusCard();
+            LinearLayout.LayoutParams statusParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            statusParams.topMargin = dp(8);
+            layout.addView(status, statusParams);
+            layout.addView(sectionLabel("操作"));
+            layout.addView(actionCard());
         }
 
-        portField = field(layout, "端口（所有组共用）", String.valueOf(config.port()), true);
-        intervalField = field(layout, "定时同步秒数（0 关闭）",
+        layout.addView(sectionLabel("连接设置"));
+        layout.addView(settingsCard());
+        layout.addView(sectionLabel("本机身份"));
+        layout.addView(identityCard());
+        layout.addView(footerNote());
+
+        showScreen(layout);
+        renderSelectedGroup();
+        renderServiceState();
+    }
+
+    private View brandHeader(boolean withLock) {
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout row = horizontal();
+        LinearLayout brand = new LinearLayout(this);
+        brand.setOrientation(LinearLayout.VERTICAL);
+        TextView title = text("ItemSync", 20, Typeface.BOLD, R.color.itemsync_ink);
+        TextView subtitle = text("局域网双向同步", 12, Typeface.NORMAL, R.color.itemsync_muted);
+        brand.addView(title);
+        brand.addView(subtitle);
+        row.addView(brand, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        if (withLock) {
+            TextView lock = textButton("锁定", R.color.itemsync_copper_text);
+            lock.setOnClickListener(view -> showUnlock());
+            row.addView(lock);
+        }
+        header.addView(row);
+        header.addView(divider());
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.bottomMargin = dp(12);
+        header.setLayoutParams(params);
+        return header;
+    }
+
+    private View groupChipStrip() {
+        HorizontalScrollView scroll = new HorizontalScrollView(this);
+        scroll.setHorizontalScrollBarEnabled(false);
+        scroll.setClipToPadding(false);
+        scroll.setPadding(0, 0, 0, dp(4));
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        for (AndroidGroup group : groups) {
+            TextView chip = new TextView(this);
+            chip.setText(groupChipText(group));
+            chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            chip.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+            chip.setTextColor(getColorStateList(R.color.chip_text));
+            chip.setBackgroundResource(R.drawable.bg_chip);
+            chip.setGravity(Gravity.CENTER);
+            chip.setMinHeight(dp(44));
+            chip.setPadding(dp(14), dp(8), dp(14), dp(8));
+            chip.setClickable(true);
+            chip.setFocusable(true);
+            chip.setSelected(group.id().equals(selectedGroupId));
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            params.rightMargin = dp(8);
+            row.addView(chip, params);
+            chip.setOnClickListener(view -> selectGroup(group.id()));
+            groupChips.add(chip);
+        }
+        scroll.addView(row);
+        return scroll;
+    }
+
+    private View statusCard() {
+        LinearLayout card = card();
+        card.addView(eyebrow("当前同步组"));
+        groupNameLabel = text("", 24, Typeface.BOLD, R.color.itemsync_ink);
+        groupNameLabel.setLineSpacing(dp(2), 1f);
+        card.addView(groupNameLabel);
+
+        LinearLayout state = horizontal();
+        serviceStateDot = new View(this);
+        LinearLayout.LayoutParams dotParams = new LinearLayout.LayoutParams(dp(8), dp(8));
+        dotParams.rightMargin = dp(8);
+        serviceStateDot.setLayoutParams(dotParams);
+        serviceStateDot.setImportantForAccessibility(
+                View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        serviceStateDot.setBackground(circle(getColor(R.color.itemsync_idle)));
+        serviceStateLabel = text("", 14, Typeface.NORMAL, R.color.itemsync_muted);
+        state.addView(serviceStateDot);
+        state.addView(serviceStateLabel);
+        LinearLayout.LayoutParams stateParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        stateParams.topMargin = dp(4);
+        card.addView(state, stateParams);
+
+        card.addView(fieldLabel("组 ID"));
+        groupIdLabel = monoValue();
+        card.addView(groupIdLabel);
+
+        card.addView(fieldLabel("同步根"));
+        groupRootLabel = text("", 14, Typeface.NORMAL, R.color.itemsync_ink);
+        groupRootLabel.setTextIsSelectable(true);
+        groupRootLabel.setLineSpacing(dp(2), 1f);
+        card.addView(groupRootLabel);
+
+        Button syncNow = primaryButton("立即同步");
+        syncNow.setOnClickListener(view -> requestSync());
+        addWithTop(card, syncNow, 16);
+        return card;
+    }
+
+    private View actionCard() {
+        LinearLayout card = cardNoPadding();
+        addActionRow(card, "局域网设备", "在线状态、地址与信任开关", this::showDevices, false);
+        addActionRow(card, "同步规则", "闹钟、目录变动与启停", this::showRules, false);
+        addActionRow(card, "组设置", "改名、更换同步根、停用或删除",
+                this::showGroupSettings, false);
+        addActionRow(card, "添加同步组", "创建新组或加入已有组", this::showAddGroup, true);
+        return card;
+    }
+
+    private void addActionRow(LinearLayout card, String titleText, String subtitleText,
+                              Runnable action, boolean last) {
+        LinearLayout row = horizontal();
+        row.setMinimumHeight(dp(64));
+        row.setPadding(dp(16), dp(10), dp(12), dp(10));
+        row.setBackgroundResource(R.drawable.bg_row);
+        row.setClickable(true);
+        row.setFocusable(true);
+
+        LinearLayout textBlock = new LinearLayout(this);
+        textBlock.setOrientation(LinearLayout.VERTICAL);
+        TextView title = text(titleText, 15, Typeface.BOLD, R.color.itemsync_ink);
+        TextView subtitle = text(subtitleText, 14, Typeface.NORMAL, R.color.itemsync_muted);
+        subtitle.setLineSpacing(dp(2), 1f);
+        textBlock.addView(title);
+        textBlock.addView(subtitle);
+        row.addView(textBlock, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView chevron = text("›", 22, Typeface.NORMAL, R.color.itemsync_muted);
+        chevron.setPadding(dp(8), 0, 0, 0);
+        row.addView(chevron);
+        row.setOnClickListener(view -> action.run());
+        card.addView(row);
+        if (!last) {
+            card.addView(insetDivider());
+        }
+    }
+
+    private View settingsCard() {
+        LinearLayout card = card();
+        portField = field(card, "端口（所有组共用）", String.valueOf(config.port()), true);
+        intervalField = field(card, "定时同步秒数（0 关闭）",
                 String.valueOf(config.intervalSeconds()), true);
-
-        fingerprintLabel = hint(config.fingerprint().isEmpty()
-                ? "本机指纹: 启动服务后生成"
-                : "本机指纹: " + config.fingerprint());
-        fingerprintLabel.setTextIsSelectable(true);
-        layout.addView(fingerprintLabel);
-
-        Button refresh = new Button(this);
-        refresh.setText("刷新本机指纹");
-        refresh.setOnClickListener(view -> fingerprintLabel.setText(
-                "本机指纹: " + AndroidSyncConfig.of(this).fingerprint()));
-        layout.addView(refresh);
-
-        Button add = new Button(this);
-        add.setText("添加同步组");
-        add.setOnClickListener(view -> showAddGroup());
-        layout.addView(add);
-
-        Button settings = new Button(this);
-        settings.setText("组设置");
-        settings.setOnClickListener(view -> showGroupSettings());
-        layout.addView(settings);
-
-        Button devices = new Button(this);
-        devices.setText("局域网设备");
-        devices.setOnClickListener(view -> showDevices());
-        layout.addView(devices);
-
-        Button rules = new Button(this);
-        rules.setText("同步规则");
-        rules.setOnClickListener(view -> showRules());
-        layout.addView(rules);
-
-        Button syncNow = new Button(this);
-        syncNow.setText("立即同步");
-        syncNow.setOnClickListener(view -> {
-            AndroidGroup selected = selectedGroup();
-            if (selected == null) {
-                Toast.makeText(this, "请先添加同步组", Toast.LENGTH_SHORT).show();
-            } else if (!selected.enabled()) {
-                Toast.makeText(this, "该同步组已停用", Toast.LENGTH_SHORT).show();
-            } else if (boundService != null && boundService.isReady()) {
-                boundService.requestSync(selected.id());
-                Toast.makeText(this, "已请求同步", Toast.LENGTH_SHORT).show();
-            } else {
-                Toast.makeText(this, "请先保存并启动同步服务", Toast.LENGTH_SHORT).show();
-            }
+        Button start = secondaryButton("保存并启动");
+        start.setOnClickListener(view -> {
+            startSync();
+            refreshServiceStateSoon();
         });
-        layout.addView(syncNow);
-
-        Button start = new Button(this);
-        start.setText("保存并启动");
-        start.setOnClickListener(view -> startSync());
-        layout.addView(start);
-
-        Button stop = new Button(this);
-        stop.setText("停止同步");
+        card.addView(start);
+        Button stop = dangerButton("停止同步");
         stop.setOnClickListener(view -> {
+            boolean wasRunning = SyncForegroundService.isRunning();
             stopService(new Intent(this, SyncForegroundService.class));
-            Toast.makeText(this, "已停止同步服务", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, wasRunning ? "已停止同步服务" : "同步服务未运行",
+                    Toast.LENGTH_SHORT).show();
+            refreshServiceStateSoon();
         });
-        layout.addView(stop);
+        addWithTop(card, stop, 8);
+        card.addView(hint("保存后按当前配置启动前台同步服务；停止不会删除配置。"));
+        return card;
+    }
 
-        Button lock = new Button(this);
-        lock.setText("锁定界面");
-        lock.setOnClickListener(view -> showUnlock());
-        layout.addView(lock);
+    private View identityCard() {
+        LinearLayout card = card();
+        card.addView(hint("证书指纹用于在设备列表中核对身份，不是组 ID。"));
+        fingerprintLabel = monoValue();
+        setFingerprintText();
+        card.addView(fingerprintLabel);
+        Button refresh = secondaryButton("刷新本机指纹");
+        refresh.setOnClickListener(view -> setFingerprintText());
+        addWithTop(card, refresh, 12);
+        return card;
+    }
 
-        setContentView(scroll(layout));
+    private View emptyGroupsCard() {
+        LinearLayout card = card();
+        card.addView(eyebrow("同步组"));
+        card.addView(title("还没有同步组"));
+        card.addView(hint("添加一个组后，这里会显示当前组状态、同步根和操作入口。"));
+        Button add = primaryButton("添加同步组");
+        add.setOnClickListener(view -> showAddGroup());
+        card.addView(add);
+        return card;
+    }
+
+    private void setFingerprintText() {
+        String value = AndroidSyncConfig.of(this).fingerprint();
+        fingerprintLabel.setText(value.isEmpty() ? "启动服务后生成" : value);
+    }
+
+    private void requestSync() {
+        AndroidGroup selected = selectedGroup();
+        if (selected == null) {
+            Toast.makeText(this, "请先添加同步组", Toast.LENGTH_SHORT).show();
+        } else if (!selected.enabled()) {
+            Toast.makeText(this, "该同步组已停用", Toast.LENGTH_SHORT).show();
+        } else if (boundService != null && boundService.isReady()) {
+            boundService.requestSync(selected.id());
+            Toast.makeText(this, "已请求同步", Toast.LENGTH_SHORT).show();
+        } else if (SyncForegroundService.requestSyncIfReady(selected.id())) {
+            Toast.makeText(this, "已请求同步", Toast.LENGTH_SHORT).show();
+        } else if (SyncForegroundService.isRunning()) {
+            Toast.makeText(this, "同步服务尚未就绪，请稍后重试", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "请先保存并启动同步服务", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void selectGroup(GroupId id) {
+        selectedGroupId = id;
+        for (int index = 0; index < groupChips.size() && index < groups.size(); index++) {
+            groupChips.get(index).setSelected(groups.get(index).id().equals(id));
+        }
+        renderSelectedGroup();
+        renderServiceState();
+    }
+
+    private void renderServiceState() {
+        if (serviceStateLabel == null || serviceStateDot == null) {
+            return;
+        }
+        AndroidGroup group = selectedGroup();
+        String text;
+        int color;
+        if (group == null) {
+            text = "未配置同步组";
+            color = R.color.itemsync_idle;
+        } else if (!group.enabled()) {
+            text = "该组已停用";
+            color = R.color.itemsync_idle;
+        } else if (SyncForegroundService.isRunningAndReady()) {
+            text = "同步服务运行中";
+            color = R.color.itemsync_live;
+        } else if (SyncForegroundService.isRunning()) {
+            text = "同步服务正在启动";
+            color = R.color.itemsync_copper;
+        } else {
+            text = "同步服务未启动";
+            color = R.color.itemsync_idle;
+        }
+        serviceStateLabel.setText(text);
+        serviceStateDot.setBackground(circle(getColor(color)));
+    }
+
+    private void refreshServiceStateSoon() {
+        Handler handler = new Handler(Looper.getMainLooper());
+        handler.postDelayed(this::renderServiceState, 500);
+        handler.postDelayed(this::renderServiceState, 1500);
+        handler.postDelayed(this::renderServiceState, 4000);
+    }
+
+    private String groupChipText(AndroidGroup group) {
+        String name = group.name() == null || group.name().isBlank()
+                ? group.id().value() : group.name();
+        int duplicates = 0;
+        for (AndroidGroup other : groups) {
+            String otherName = other.name() == null || other.name().isBlank()
+                    ? other.id().value() : other.name();
+            if (otherName.equals(name)) {
+                duplicates++;
+            }
+        }
+        String text = duplicates > 1 ? name + " · " + group.id().value() : name;
+        return group.enabled() ? text : text + "（停用）";
+    }
+
+    private LinearLayout screen() {
+        LinearLayout layout = vertical();
+        layout.setBackgroundColor(getColor(R.color.itemsync_paper));
+        return layout;
+    }
+
+    private LinearLayout horizontal() {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        return row;
+    }
+
+    private View spacer() {
+        View view = new View(this);
+        view.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        return view;
+    }
+
+    private LinearLayout card() {
+        LinearLayout card = cardNoPadding();
+        int padding = dp(16);
+        card.setPadding(padding, padding, padding, padding);
+        return card;
+    }
+
+    private LinearLayout cardNoPadding() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setBackgroundResource(R.drawable.bg_card);
+        card.setClipToOutline(true);
+        return card;
+    }
+
+    private TextView eyebrow(String value) {
+        TextView view = text(value, 11, Typeface.BOLD, R.color.itemsync_muted);
+        view.setLetterSpacing(0.04f);
+        view.setPadding(0, 0, 0, dp(4));
+        return view;
+    }
+
+    private TextView title(String value) {
+        TextView view = text(value, 22, Typeface.BOLD, R.color.itemsync_ink);
+        view.setLineSpacing(dp(2), 1f);
+        view.setPadding(0, 0, 0, dp(6));
+        return view;
+    }
+
+    private TextView sectionLabel(String value) {
+        TextView view = text(value, 12, Typeface.BOLD, R.color.itemsync_muted);
+        view.setLetterSpacing(0.04f);
+        view.setPadding(0, dp(20), 0, dp(8));
+        return view;
+    }
+
+    private TextView fieldLabel(String value) {
+        TextView view = text(value, 12, Typeface.BOLD, R.color.itemsync_muted);
+        view.setPadding(0, dp(12), 0, dp(4));
+        return view;
+    }
+
+    private TextView monoValue() {
+        TextView view = new TextView(this);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        view.setTypeface(Typeface.MONOSPACE);
+        view.setTextColor(getColor(R.color.itemsync_ink));
+        view.setTextIsSelectable(true);
+        view.setPadding(0, dp(2), 0, dp(8));
+        return view;
+    }
+
+    private TextView footerNote() {
+        TextView view = text("局域网直连 · 无中心服务器", 11, Typeface.NORMAL,
+                R.color.itemsync_muted);
+        view.setGravity(Gravity.CENTER);
+        view.setPadding(0, dp(24), 0, dp(28));
+        return view;
+    }
+
+    private Button primaryButton(String value) {
+        Button button = button(value);
+        button.setTextColor(getColor(R.color.itemsync_surface));
+        button.setBackground(buttonBackground(getColor(R.color.itemsync_ink),
+                Color.parseColor("#2A343A"), 0));
+        button.setMinHeight(dp(52));
+        return button;
+    }
+
+    private Button secondaryButton(String value) {
+        Button button = button(value);
+        button.setTextColor(getColor(R.color.itemsync_ink));
+        button.setBackground(buttonBackground(Color.TRANSPARENT,
+                Color.parseColor("#EDE7DB"), getColor(R.color.itemsync_hairline)));
+        return button;
+    }
+
+    private Button dangerButton(String value) {
+        Button button = button(value);
+        button.setTextColor(getColor(R.color.itemsync_error));
+        button.setBackground(buttonBackground(Color.TRANSPARENT,
+                Color.parseColor("#F7E3E0"), 0));
+        return button;
+    }
+
+    private Button button(String value) {
+        Button button = new Button(this);
+        button.setText(value);
+        button.setAllCaps(false);
+        button.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        button.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        button.setMinHeight(dp(48));
+        button.setPadding(dp(16), dp(12), dp(16), dp(12));
+        button.setStateListAnimator(null);
+        button.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        return button;
+    }
+
+    private TextView textButton(String value, int color) {
+        TextView button = text(value, 14, Typeface.BOLD, color);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(48));
+        button.setLayoutParams(params);
+        button.setGravity(Gravity.CENTER);
+        button.setPadding(dp(12), 0, dp(12), 0);
+        button.setBackgroundResource(R.drawable.bg_button_ghost);
+        button.setClickable(true);
+        button.setFocusable(true);
+        return button;
+    }
+
+    private TextView text(String value, int sizeSp, int style, int color) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp);
+        view.setTypeface(Typeface.create("sans-serif", style));
+        view.setTextColor(getColor(color));
+        return view;
+    }
+
+    private void addWithTop(LinearLayout container, View child, int topDp) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.topMargin = dp(topDp);
+        container.addView(child, params);
+    }
+
+    private View divider() {
+        View view = new View(this);
+        view.setBackgroundColor(getColor(R.color.itemsync_hairline));
+        view.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
+        return view;
+    }
+
+    private View insetDivider() {
+        View view = divider();
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(1));
+        params.leftMargin = dp(16);
+        params.rightMargin = dp(16);
+        view.setLayoutParams(params);
+        return view;
+    }
+
+    private Drawable circle(int fill) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setShape(GradientDrawable.OVAL);
+        drawable.setColor(fill);
+        return drawable;
+    }
+
+    private Drawable buttonBackground(int normal, int pressed, int stroke) {
+        StateListDrawable states = new StateListDrawable();
+        states.addState(new int[]{android.R.attr.state_pressed}, shape(pressed, stroke));
+        states.addState(new int[]{}, shape(normal, stroke));
+        return states;
+    }
+
+    private Drawable shape(int fill, int stroke) {
+        GradientDrawable drawable = new GradientDrawable();
+        drawable.setShape(GradientDrawable.RECTANGLE);
+        drawable.setColor(fill);
+        drawable.setCornerRadius(dp(4));
+        if (stroke != 0) {
+            drawable.setStroke(dp(1), stroke);
+        }
+        return drawable;
+    }
+
+    private void showScreen(LinearLayout content) {
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
+        scroll.setBackgroundColor(getColor(R.color.itemsync_paper));
+        scroll.addView(content);
+        setContentView(scroll);
+        applySystemBarInsets(scroll);
+    }
+
+    private void applySystemBarInsets(View root) {
+        // Android 15+ enforces edge-to-edge; older versions still reserve the system bars.
+        if (Build.VERSION.SDK_INT < 35) {
+            return;
+        }
+        root.setOnApplyWindowInsetsListener((view, insets) -> {
+            int top;
+            int bottom;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Insets bars = insets.getInsets(WindowInsets.Type.systemBars());
+                top = bars.top;
+                bottom = bars.bottom;
+            } else {
+                top = insets.getSystemWindowInsetTop();
+                bottom = insets.getSystemWindowInsetBottom();
+            }
+            view.setPadding(0, top, 0, bottom);
+            return insets;
+        });
+        root.requestApplyInsets();
+    }
+
+    private void configureSystemBars() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            getWindow().setStatusBarColor(Color.TRANSPARENT);
+            getWindow().setNavigationBarColor(Color.TRANSPARENT);
+            WindowInsetsController controller =
+                    getWindow().getDecorView().getWindowInsetsController();
+            if (controller != null) {
+                int appearance = WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS
+                        | WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+                controller.setSystemBarsAppearance(appearance, appearance);
+            }
+        } else {
+            getWindow().setStatusBarColor(getColor(R.color.itemsync_paper));
+            getWindow().setNavigationBarColor(getColor(R.color.itemsync_paper));
+            getWindow().getDecorView().setSystemUiVisibility(
+                    View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                            | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
+        }
     }
 
     private void renderSelectedGroup() {
@@ -406,9 +858,10 @@ public final class MainActivity extends Activity {
         EditText id = field(content, "组 ID（加入已有组时填写对方的组 ID）",
                 GroupId.random().value(), false);
         EditText root = field(content, "本机同步根", defaultRoot(), false);
-        TextView error = new TextView(this);
-        error.setTextColor(0xFFB00020);
-        error.setTextSize(12);
+        root.setSingleLine(false);
+        root.setMaxLines(3);
+        root.setHorizontallyScrolling(false);
+        TextView error = errorLabel();
         content.addView(error);
 
         AlertDialog dialog = new AlertDialog.Builder(this)
@@ -507,15 +960,16 @@ public final class MainActivity extends Activity {
     private void showChangeRootDialog(AndroidGroup group, AlertDialog settings) {
         LinearLayout content = vertical();
         EditText root = field(content, "新同步根", group.rootPath(), false);
-        TextView error = new TextView(this);
-        error.setTextColor(0xFFB00020);
-        error.setTextSize(12);
+        root.setSingleLine(false);
+        root.setMaxLines(3);
+        root.setHorizontallyScrolling(false);
+        TextView error = errorLabel();
         content.addView(error);
         content.addView(hint("更换同步根会停止该组同步，并清空该组的版本、冲突、"
                 + "同步游标与运行记录；组 ID、信任、规则和设备列表保留。"
                 + "旧目录中的文件不会被删除。"));
         AlertDialog dialog = new AlertDialog.Builder(this)
-                .setTitle("更换同步根 — " + groupText(group))
+                .setTitle("更换同步根：" + groupText(group))
                 .setView(content)
                 .setPositiveButton("更换", null)
                 .setNegativeButton("取消", null)
@@ -896,7 +1350,7 @@ public final class MainActivity extends Activity {
         private RuleDialog(List<Trigger> triggers, GroupId groupId) {
             this.groupId = groupId;
             dialog = new Dialog(MainActivity.this);
-            dialog.setTitle("同步规则 — " + groupLabel(groupId));
+            dialog.setTitle("同步规则：" + groupLabel(groupId));
 
             LinearLayout content = new LinearLayout(MainActivity.this);
             content.setOrientation(LinearLayout.VERTICAL);
@@ -906,7 +1360,7 @@ public final class MainActivity extends Activity {
             TextView hint = new TextView(MainActivity.this);
             hint.setText("规则变更立即生效；闹钟规则使用本机时区，"
                     + "目录变动规则监视该组的同步根。");
-            hint.setTextSize(12);
+            hint.setTextSize(14);
             content.addView(hint);
 
             emptyLabel = new TextView(MainActivity.this);
@@ -919,7 +1373,7 @@ public final class MainActivity extends Activity {
                 public View getView(int position, View convertView, ViewGroup parent) {
                     TextView text = (TextView) super.getView(position, convertView, parent);
                     text.setText(triggerText(getItem(position)));
-                    text.setTextSize(12);
+                    text.setTextSize(14);
                     return text;
                 }
             };
@@ -934,9 +1388,7 @@ public final class MainActivity extends Activity {
             content.addView(list, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(260)));
 
-            error = new TextView(MainActivity.this);
-            error.setTextColor(0xFFB00020);
-            error.setTextSize(12);
+            error = errorLabel();
             content.addView(error);
 
             Button addAlarm = new Button(MainActivity.this);
@@ -1171,12 +1623,10 @@ public final class MainActivity extends Activity {
             EditText time = field(content, "时间（HH:mm）", "23:00", false);
             TextView zone = new TextView(MainActivity.this);
             zone.setText("时区: " + ZoneId.systemDefault().getId());
-            zone.setTextSize(12);
+            zone.setTextSize(13);
             content.addView(zone);
-            TextView errorLabel = new TextView(MainActivity.this);
-            errorLabel.setTextColor(0xFFB00020);
-            errorLabel.setTextSize(12);
-            content.addView(errorLabel);
+            TextView alarmError = errorLabel();
+            content.addView(alarmError);
 
             AlertDialog alarm = new AlertDialog.Builder(MainActivity.this)
                     .setTitle("添加闹钟规则")
@@ -1207,7 +1657,7 @@ public final class MainActivity extends Activity {
                             addRule(new TriggerConfig.Alarm(
                                     new AlarmSchedule(days, alarmTime, ZoneId.systemDefault())));
                         } catch (RuntimeException e) {
-                            errorLabel.setText(e.getMessage() == null ? "规则无效" : e.getMessage());
+                            alarmError.setText(e.getMessage() == null ? "规则无效" : e.getMessage());
                         }
                     }));
             alarm.show();
@@ -1296,7 +1746,7 @@ public final class MainActivity extends Activity {
         private DeviceDialog(List<PeerTrustCoordinator.PeerView> views, GroupId groupId) {
             this.groupId = groupId;
             dialog = new Dialog(MainActivity.this);
-            dialog.setTitle("组内设备 — " + groupLabel(groupId));
+            dialog.setTitle("组内设备：" + groupLabel(groupId));
 
             LinearLayout content = new LinearLayout(MainActivity.this);
             content.setOrientation(LinearLayout.VERTICAL);
@@ -1310,7 +1760,7 @@ public final class MainActivity extends Activity {
             TextView hint = new TextView(MainActivity.this);
             hint.setText("首次开启信任会固定当前发现的证书指纹，无法防止首次中间人；"
                     + "请核对设备名。组 ID 只决定能发现哪些设备。");
-            hint.setTextSize(12);
+            hint.setTextSize(14);
             content.addView(hint);
 
             adapter = new ArrayAdapter<PeerTrustCoordinator.PeerView>(
@@ -1320,7 +1770,7 @@ public final class MainActivity extends Activity {
                 public View getView(int position, View convertView, ViewGroup parent) {
                     TextView text = (TextView) super.getView(position, convertView, parent);
                     text.setText(deviceLabel(getItem(position)));
-                    text.setTextSize(12);
+                    text.setTextSize(14);
                     return text;
                 }
             };
@@ -1336,9 +1786,7 @@ public final class MainActivity extends Activity {
             content.addView(list, new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, dp(300)));
 
-            deviceError = new TextView(MainActivity.this);
-            deviceError.setTextColor(0xFFB00020);
-            deviceError.setTextSize(12);
+            deviceError = errorLabel();
             content.addView(deviceError);
 
             pairButton = new Button(MainActivity.this);
@@ -1541,44 +1989,57 @@ public final class MainActivity extends Activity {
         return layout;
     }
 
-    private ScrollView scroll(LinearLayout layout) {
-        ScrollView scroll = new ScrollView(this);
-        scroll.addView(layout);
-        return scroll;
-    }
-
     private EditText passwordField(LinearLayout layout, String label) {
-        layout.addView(hint(label));
+        layout.addView(fieldLabel(label));
         EditText field = new EditText(this);
         field.setSingleLine(true);
+        field.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(10);
+        params.bottomMargin = dp(12);
         layout.addView(field, params);
         return field;
     }
 
     private EditText field(LinearLayout layout, String label, String value, boolean numeric) {
-        layout.addView(hint(label));
+        layout.addView(fieldLabel(label));
         EditText field = new EditText(this);
         field.setText(value);
         field.setSingleLine(true);
+        field.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         if (numeric) {
             field.setInputType(InputType.TYPE_CLASS_NUMBER);
         }
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        params.bottomMargin = dp(10);
+        params.bottomMargin = dp(12);
         layout.addView(field, params);
         return field;
     }
 
-    private TextView hint(String text) {
+    private TextView hint(String value) {
         TextView view = new TextView(this);
-        view.setText(text);
+        view.setText(value);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        view.setTextColor(getColor(R.color.itemsync_muted));
+        view.setLineSpacing(dp(2), 1f);
         view.setPadding(0, 0, 0, dp(12));
         return view;
+    }
+
+    private TextView errorLabel() {
+        TextView view = new TextView(this);
+        view.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        view.setTextColor(getColor(R.color.itemsync_error));
+        view.setLineSpacing(dp(2), 1f);
+        view.setPadding(0, dp(4), 0, dp(8));
+        return view;
+    }
+
+    private void setError(TextView view, String text) {
+        view.setText(text);
+        view.setVisibility(text == null || text.isEmpty() ? View.GONE : View.VISIBLE);
     }
 
     private int dp(int value) {
