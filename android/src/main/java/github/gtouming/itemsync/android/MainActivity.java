@@ -30,6 +30,7 @@ import android.widget.Toast;
 
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.TriggerId;
+import github.gtouming.itemsync.domain.model.SyncRoot;
 import github.gtouming.itemsync.domain.model.Trigger;
 import github.gtouming.itemsync.domain.security.LocalPassword;
 import github.gtouming.itemsync.store.metadata.GroupDataReset;
@@ -452,8 +453,14 @@ public final class MainActivity extends Activity {
         root.setTextIsSelectable(true);
         content.addView(root);
         EditText name = field(content, "组名（只在本机显示）", group.name(), false);
-        content.addView(hint("组 ID 与同步根在添加后不可修改；需要更换请删除该组后重新添加。"
-                + "删除组会保留同步根中的文件。"));
+        AlertDialog[] settingsDialog = new AlertDialog[1];
+        Button changeRoot = new Button(this);
+        changeRoot.setText("更换同步根");
+        changeRoot.setOnClickListener(view -> showChangeRootDialog(group, settingsDialog[0]));
+        content.addView(changeRoot);
+        content.addView(hint("组 ID 添加后不可修改。更换同步根会清空该组的版本、冲突、"
+                + "同步游标与运行记录，保留组 ID、信任、规则和设备列表；"
+                + "旧目录中的文件不会被删除。删除组会保留同步根中的文件。"));
 
         AlertDialog dialog = new AlertDialog.Builder(this)
                 .setTitle("组设置")
@@ -462,6 +469,7 @@ public final class MainActivity extends Activity {
                 .setNeutralButton("删除此组", null)
                 .setNegativeButton("关闭", null)
                 .create();
+        settingsDialog[0] = dialog;
         dialog.setOnShowListener(event -> {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(view -> {
                 try {
@@ -477,6 +485,82 @@ public final class MainActivity extends Activity {
                     confirmDeleteGroup(group, dialog));
         });
         dialog.show();
+    }
+
+    private void showChangeRootDialog(AndroidGroup group, AlertDialog settings) {
+        LinearLayout content = vertical();
+        EditText root = field(content, "新同步根", group.rootPath(), false);
+        TextView error = new TextView(this);
+        error.setTextColor(0xFFB00020);
+        error.setTextSize(12);
+        content.addView(error);
+        content.addView(hint("更换同步根会停止该组同步，并清空该组的版本、冲突、"
+                + "同步游标与运行记录；组 ID、信任、规则和设备列表保留。"
+                + "旧目录中的文件不会被删除。"));
+        AlertDialog dialog = new AlertDialog.Builder(this)
+                .setTitle("更换同步根 — " + groupText(group))
+                .setView(content)
+                .setPositiveButton("更换", null)
+                .setNegativeButton("取消", null)
+                .create();
+        dialog.setOnShowListener(event -> dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+                .setOnClickListener(view -> {
+                    try {
+                        File newRoot = new File(root.getText().toString().trim());
+                        if (newRoot.exists() && !newRoot.isDirectory()) {
+                            throw new IllegalArgumentException("同步根不是目录: " + newRoot);
+                        }
+                        if (newRoot.getAbsolutePath()
+                                .equals(new File(group.rootPath()).getAbsolutePath())) {
+                            throw new IllegalArgumentException("同步根没有变化");
+                        }
+                        ensureRootOutsideOtherGroups(group.id(), newRoot);
+                        if (!newRoot.exists() && !newRoot.mkdirs()) {
+                            throw new IllegalArgumentException("无法创建同步根: " + newRoot);
+                        }
+                        stopSyncServiceForMaintenance();
+                        try (AndroidSqliteMetadataStore store =
+                                     new AndroidSqliteMetadataStore(this, "itemsync.sqlite")) {
+                            GroupDataReset.reset(store, group.id(),
+                                    new SyncRoot(newRoot.getAbsolutePath(), null, null));
+                        }
+                        config.changeRoot(group.id(), newRoot.getAbsolutePath());
+                        dialog.dismiss();
+                        settings.dismiss();
+                        showConfig();
+                        restartServiceAfterMaintenance();
+                        Toast.makeText(this, "同步根已更换，正在重启同步服务",
+                                Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        error.setText("更换失败: " + message(e));
+                    }
+                }));
+        dialog.show();
+    }
+
+    private void ensureRootOutsideOtherGroups(GroupId current, File candidate) {
+        String normalized = canonical(candidate);
+        for (AndroidGroup other : config.groups()) {
+            if (other.id().equals(current)) {
+                continue;
+            }
+            String otherRoot = canonical(new File(other.rootPath()));
+            String separator = File.separator;
+            if (normalized.equals(otherRoot)
+                    || normalized.startsWith(otherRoot + separator)
+                    || otherRoot.startsWith(normalized + separator)) {
+                throw new IllegalArgumentException(
+                        "同步根与其他同步组重叠：每个目录只能属于一个同步组");
+            }
+        }
+    }
+
+    private static String canonical(File file) {
+        try {
+            return file.getCanonicalPath();
+        } catch (Exception e) {
+            return file.getAbsolutePath();
+        }
     }
 
     private void confirmDeleteGroup(AndroidGroup group, AlertDialog settings) {

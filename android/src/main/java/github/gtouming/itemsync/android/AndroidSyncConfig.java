@@ -250,6 +250,28 @@ public final class AndroidSyncConfig {
         saveGroups(updated);
     }
 
+    /**
+     * Replaces the sync root of one group. The caller stops the group and resets its metadata
+     * first; only the persisted configuration is changed here.
+     */
+    public void changeRoot(GroupId id, String root) {
+        Objects.requireNonNull(id, "id");
+        List<AndroidGroup> updated = new ArrayList<>(groups().size());
+        boolean found = false;
+        for (AndroidGroup group : groups()) {
+            if (group.id().equals(id)) {
+                updated.add(new AndroidGroup(group.id(), group.name(), root));
+                found = true;
+            } else {
+                updated.add(group);
+            }
+        }
+        if (!found) {
+            throw new IllegalArgumentException("unknown sync group: " + id.value());
+        }
+        saveGroups(updated);
+    }
+
     public void renameGroup(GroupId id, String name) {
         Objects.requireNonNull(id, "id");
         List<AndroidGroup> updated = new ArrayList<>(groups().size());
