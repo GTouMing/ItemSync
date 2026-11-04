@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>ItemSync - Review Report</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<style>
+		body { font-family: Inter, ui-sans-serif, system-ui, "Microsoft YaHei UI", sans-serif; }
+		.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+		.report-section { border: 1px solid #222226; background: #0a0a0b; position: relative; }
+		.corner-box { position: absolute; width: 20px; height: 20px; border: 1px solid #222226; background: #000; }
+	</style>
+</head>
+<body class="bg-black text-[#fafafa]">
+	<main class="mx-auto w-full max-w-6xl px-5 py-8 md:px-10 md:py-12">
+
+		<header class="report-section mb-8 p-6 md:p-8">
+			<div class="corner-box left-0 top-0 -translate-x-1/2 -translate-y-1/2"></div>
+			<div class="corner-box right-0 top-0 translate-x-1/2 -translate-y-1/2"></div>
+			<div class="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+				<div>
+					<div class="mono mb-2 text-xs tracking-widest text-[#666]">// REVIEW / PRODUCT</div>
+					<h1 class="text-4xl font-bold tracking-tight md:text-6xl">ItemSync</h1>
+					<p class="mt-3 max-w-2xl text-sm leading-6 text-[#a0a0a0]">
+						Windows JavaFX 桌面端，redesign 之后的主窗口与全部对话框。只评审，不修改。
+						Android 与 CLI 不在本次范围。
+					</p>
+				</div>
+				<div class="mono text-left text-xs text-[#666] md:text-right">
+					<div>COMMANDCODE REPORT</div>
+					<div class="text-[#444]">2026-11-04</div>
+					<div class="mt-2 text-[#444]">EVIDENCE: SOURCE + BUILD + TESTS</div>
+				</div>
+			</div>
+		</header>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="corner-box left-0 top-0 -translate-x-1/2 -translate-y-1/2"></div>
+			<div class="corner-box right-0 top-0 translate-x-1/2 -translate-y-1/2"></div>
+			<div class="grid gap-8 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+				<div>
+					<div class="mono mb-2 text-xs tracking-widest text-[#666]">// OVERALL</div>
+					<div class="text-6xl font-bold tracking-tight md:text-7xl">34</div>
+					<div class="mt-1 text-lg text-[#666]">/ 50</div>
+					<div class="mt-4 inline-flex border border-[#fbbf24]/30 bg-[#fbbf24]/10 px-3 py-1 text-sm text-[#fbbf24]">NEEDS CHANGES · 需要改动</div>
+				</div>
+				<div>
+					<div class="mono mb-3 text-xs tracking-widest text-[#666]">// TL;DR</div>
+					<p class="text-sm leading-6 text-[#a0a0a0]">
+						redesign 已经建立了自己的世界：暖纸表面、墨色主操作、铜色选择与焦点、横向同步组标签、
+						两列工作台和一个真正成为焦点的状态带。它不再是默认 Modena 加一排按钮，也不再像通用 SaaS 仪表盘。
+					</p>
+					<p class="mt-4 text-sm leading-6 text-[#a0a0a0]">
+						主要问题在边缘状态：同步没有取消入口，动态错误不会被读屏主动播报，窗口初始尺寸在高缩放的小屏上偏大，
+						同名同步组在标签栏里无法区分。没有 HIGH，先处理 6 个 MEDIUM。
+					</p>
+					<p class="mt-4 text-sm leading-6 text-[#fbbf24]">
+						顺序：/design a11y → interaction → responsive → typeset → finish。
+					</p>
+				</div>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// DESIGN LENSES</div>
+			<div class="overflow-x-auto">
+				<table class="w-full min-w-[720px] border-collapse text-sm">
+					<thead>
+						<tr class="border-b border-[#222226] text-left mono text-xs text-[#666]">
+							<th class="py-3 pr-4 font-normal">#</th>
+							<th class="py-3 pr-4 font-normal">LENS</th>
+							<th class="py-3 pr-4 font-normal">SCORE</th>
+							<th class="py-3 font-normal">JUDGMENT</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">1</td>
+							<td class="py-4 pr-4 text-[#fafafa]">First impression</td>
+							<td class="py-4 pr-4 text-[#34d399]">7/10</td>
+							<td class="py-4 text-[#a0a0a0]">方向明确，信号台语言成立；未渲染，观感仅从实现与样式表推断</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">2</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Hierarchy</td>
+							<td class="py-4 pr-4 text-[#34d399]">7/10</td>
+							<td class="py-4 text-[#a0a0a0]">28px 当前组状态是焦点，主操作唯一；组名在标签与状态带重复一次</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">3</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Color voice</td>
+							<td class="py-4 pr-4 text-[#34d399]">8/10</td>
+							<td class="py-4 text-[#a0a0a0]">暖纸、墨色、铜色角色清楚；状态色始终配文字；无渐变与装饰阴影</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">4</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Type voice</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">6/10</td>
+							<td class="py-4 text-[#a0a0a0]">28px 状态与 13px 正文有对比；10px 中文微标签偏小，诊断数据偏密</td>
+						</tr>
+						<tr>
+							<td class="py-4 pr-4 text-[#555]">5</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Interaction feel</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">6/10</td>
+							<td class="py-4 text-[#a0a0a0]">进度、确认动词、弹窗滚动已补；仍无取消、无动态播报、部分禁用无原因</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// COGNITIVE LOAD / RISK</div>
+			<div class="grid gap-6 md:grid-cols-2">
+				<div>
+					<div class="mb-3 text-xl font-semibold">中高：方向成立，边缘状态未收口</div>
+					<ul class="space-y-3 text-sm text-[#a0a0a0]">
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>状态带成为主视觉，不再让工具按钮抢焦点</li>
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>危险动作不再默认触发，确认动词具体</li>
+						<li><span class="mono mr-2 text-[#fbbf24]">WATCH</span>长任务没有取消，10 GB 场景可能卡住</li>
+						<li><span class="mono mr-2 text-[#fbbf24]">WATCH</span>动态错误与信任警告不会被读屏主动播报</li>
+						<li><span class="mono mr-2 text-[#f43f5e]">FAIL</span>首启窗口在高缩放小屏上超出工作区</li>
+					</ul>
+				</div>
+				<div>
+					<div class="mono mb-3 text-xs tracking-widest text-[#666]">// NEXT MODES</div>
+					<div class="flex flex-wrap gap-2">
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design a11y</span>
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design interaction</span>
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design responsive</span>
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design typeset</span>
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design finish</span>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// WHAT'S WORKING</div>
+			<div class="grid gap-4 md:grid-cols-3">
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">方向不是换色</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">顶部组标签、两列工作台、状态带与侧栏改变了空间前提；旧版左栏加平铺按钮的构图已经不存在。</p>
+				</article>
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">状态成为主角</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">28px 组名、信号点、冲突徽标和人类可读运行状态，让当前组发生了什么先于工具按钮被看到。</p>
+				</article>
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">主题覆盖到对话框</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">所有 Dialog/Alert 共用同一份样式表，内容型弹窗可滚动，尺寸按屏幕封顶；表单标签与可访问名称已补齐。</p>
+				</article>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// PRIORITY ISSUES</div>
+			<div class="space-y-5">
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#fbbf24]">MEDIUM · ACCESSIBILITY</div>
+					<h2 class="mb-2 text-lg font-semibold">动态状态与错误不会被主动播报</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">状态与错误通过 <span class="mono">Label.setText</span> 更新，没有可访问通知或焦点转移。读屏用户不会知道同步失败、信任警告或冲突变化。</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">FIX: 用 /design a11y；错误出现时移动焦点或发出可访问变更通知，保留可手动到达的状态文本。</div>
+				</article>
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#fbbf24]">MEDIUM · INTERACTION</div>
+					<h2 class="mb-2 text-lg font-semibold">长任务没有取消入口</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">同步时有进度与“同步中…”，但没有取消。单文件可达 10 GB，局域网卡住时用户只能退出应用。</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">FIX: 用 /design interaction；增加“取消同步”并接到真实取消能力，没有后端能力就先补接口。</div>
+				</article>
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#fbbf24]">MEDIUM · RESPONSIVE</div>
+					<h2 class="mb-2 text-lg font-semibold">首启窗口在高缩放小屏上偏大</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">初始窗口固定为 1020×660。1366×768 在 150% 缩放下只有约 911×512 逻辑像素，窗口会超出工作区。</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">FIX: 用 /design responsive；按屏幕可视区域收缩到约 90% 宽、85% 高，保留 720×460 最小尺寸。</div>
+				</article>
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#fbbf24]">MEDIUM · INTERACTION</div>
+					<h2 class="mb-2 text-lg font-semibold">同名同步组在标签栏里无法区分</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">组标签只显示本机组名。两个组都叫“工作”时，用户可能对错误的组执行同步、改根或删除。</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">FIX: 同名时追加组 ID，或始终在组名下方显示 8 位等宽 ID。</div>
+				</article>
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#fbbf24]">MEDIUM · INTERACTION</div>
+					<h2 class="mb-2 text-lg font-semibold">部分禁用操作没有原因</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">“全部同步”和受限工具在不可用时只变灰，没有 tooltip 或就近说明，尤其在新组尚未加载时。</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">FIX: 为受限操作提供就地原因，优先复用状态带已有的解释。</div>
+				</article>
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#fbbf24]">MEDIUM · TYPE</div>
+					<h2 class="mb-2 text-lg font-semibold">10px 中文微标签偏小</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">状态 eyebrow 与底部说明使用 10px 中文，在 Windows 100% 缩放下已经吃力。</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">FIX: 用 /design typeset；中文微标签不低于 11px，必要时增加行高或减少同级信息。</div>
+				</article>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// FINDINGS</div>
+			<div class="overflow-x-auto">
+				<table class="w-full min-w-[1100px] border-collapse text-sm">
+					<thead>
+						<tr class="border-b border-[#222226] text-left mono text-xs text-[#666]">
+							<th class="py-3 pr-4 font-normal">#</th>
+							<th class="py-3 pr-4 font-normal">SEVERITY</th>
+							<th class="py-3 pr-4 font-normal">DISCIPLINE</th>
+							<th class="py-3 pr-4 font-normal">LOCATION</th>
+							<th class="py-3 pr-4 font-normal">BEFORE</th>
+							<th class="py-3 pr-4 font-normal">AFTER</th>
+							<th class="py-3 font-normal">WHY</th>
+						</tr>
+					</thead>
+					<tbody class="align-top">
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">1</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">MEDIUM</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Accessibility</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:337-340, 680-712</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">状态与错误通过 Label.setText 更新，没有可访问通知或焦点转移</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">错误出现时转移焦点，或发出可访问变更通知</td>
+							<td class="py-4 text-[#a0a0a0]">读屏用户不会知道同步失败、信任警告或冲突变化</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">2</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">MEDIUM</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Interaction</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:595-650</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">同步时有进度与“同步中…”，但没有取消入口</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">增加“取消同步”并接到真实取消能力</td>
+							<td class="py-4 text-[#a0a0a0]">10 GB 文件或局域网卡住时，用户只能退出应用</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">3</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">MEDIUM</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Responsive</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:414</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">初始窗口固定为 1020×660</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">按屏幕可视区域收缩，保留 720×460 最小尺寸</td>
+							<td class="py-4 text-[#a0a0a0]">1366×768 @150% 只有约 911×512 逻辑像素</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">4</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">MEDIUM</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Interaction</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:496-503, 532-534</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">组标签只显示本机组名</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">同名时追加组 ID，或始终显示紧凑 ID</td>
+							<td class="py-4 text-[#a0a0a0]">用户可能对错误的组执行同步、改根或删除</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">5</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">MEDIUM</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Interaction</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:543-556, 2122-2141</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">部分禁用按钮没有 tooltip 或就近原因</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">为受限操作提供禁用原因，复用状态带文案</td>
+							<td class="py-4 text-[#a0a0a0]">灰按钮不告诉用户如何恢复</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">6</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">MEDIUM</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Type</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">itemsync.css:191-195, 338-341</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">status-eyebrow 与 footer-note 使用 10px 中文</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">中文微标签不低于 11px</td>
+							<td class="py-4 text-[#a0a0a0]">10px 中文在 Windows 100% 缩放下已经吃力</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">7</td>
+							<td class="py-4 pr-4 mono text-[#34d399]">LOW</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Voice</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:252-262, 2156-2181</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">托盘图标已重绘，窗口/任务栏图标仍是默认</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">复用双向箭头生成 16/32/48/256 应用图标</td>
+							<td class="py-4 text-[#a0a0a0]">任务栏与 Alt+Tab 仍显示通用图标</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">8</td>
+							<td class="py-4 pr-4 mono text-[#34d399]">LOW</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Writing</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:733, 746, 756</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">无组时写“最近运行: 尚未同步”；停用/未加载时丢掉前缀</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">无组时用“最近运行: —”；组状态与运行记录分两行</td>
+							<td class="py-4 text-[#a0a0a0]">状态行在运行记录和组状态之间摇摆</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">9</td>
+							<td class="py-4 pr-4 mono text-[#34d399]">LOW</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Layout</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:375-385</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">“开机自启”放在“维护”分区</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">移到“设置”分区或底部状态栏</td>
+							<td class="py-4 text-[#a0a0a0]">自启是环境设置，不是维护动作</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">10</td>
+							<td class="py-4 pr-4 mono text-[#34d399]">LOW</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Accessibility</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:2196-2215</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">托盘菜单只能由鼠标右键触发</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">提供键盘可达入口，或明确保留主窗口等价路径</td>
+							<td class="py-4 text-[#a0a0a0]">键盘用户无法走托盘路径，但功能未丢失</td>
+						</tr>
+						<tr>
+							<td class="py-4 pr-4 text-[#555]">11</td>
+							<td class="py-4 pr-4 mono text-[#34d399]">LOW</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Layout</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:302-310；itemsync.css:70-79</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">5 个长组名会把横向标签推入细滚动条</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">标签内显示组名 + 组 ID 的两行紧凑形式</td>
+							<td class="py-4 text-[#a0a0a0]">组的唯一标识被藏进 hover，边界情况下更难选组</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// CONSIDERED BUT REJECTED</div>
+			<div class="overflow-x-auto">
+				<table class="w-full min-w-[720px] border-collapse text-sm">
+					<thead>
+						<tr class="border-b border-[#222226] text-left mono text-xs text-[#666]">
+							<th class="py-3 pr-4 font-normal">LOCATION</th>
+							<th class="py-3 pr-4 font-normal">CANDIDATE</th>
+							<th class="py-3 font-normal">REJECTED BECAUSE</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">itemsync.css:182-204</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">铜色同时表示选择、焦点和进行中</td>
+							<td class="py-4 text-[#a0a0a0]">三者都属于“活动”语义，且都有文字或形状伴随；再加一种色会制造噪音</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">全局</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">没有深色主题</td>
+							<td class="py-4 text-[#a0a0a0]">简报把浅色定为当前范围；深色是第二套主题，不是本次缺陷</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:372-380</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">侧栏只有文字没有图标</td>
+							<td class="py-4 text-[#a0a0a0]">工具名称已经清楚，补图标需要一整套图标系统，收益低于当前问题</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:198-204</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">状态点用颜色表达状态</td>
+							<td class="py-4 text-[#a0a0a0]">旁边的状态文本已经说明完成/失败/进行中，颜色只是强化</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">全局</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">没有搜索或过滤</td>
+							<td class="py-4 text-[#a0a0a0]">组上限 5 个，设备上限 10 台；当前规模不需要搜索</td>
+						</tr>
+						<tr>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">Android 端</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">仍是旧版 Material Light</td>
+							<td class="py-4 text-[#a0a0a0]">本次范围是 Windows；Android 未做真机验证，不能把未验证的改动当作完成</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// VERIFICATION</div>
+			<div class="grid gap-6 md:grid-cols-2">
+				<div>
+					<div class="mono mb-3 text-xs tracking-widest text-[#34d399]">RAN</div>
+					<ul class="space-y-2 text-sm leading-6 text-[#a0a0a0]">
+						<li>阅读 DesktopApp、两个对话框类、DesktopTheme、itemsync.css、brief.md 与 checkup-report.md。</li>
+						<li>:desktop:test 全部通过，包括样式表打包与 CssParser 解析测试。</li>
+						<li>:desktop:packageApp 成功生成 ItemSync.exe；itemsync.css 已在桌面 jar 内。</li>
+						<li>对比度估算：墨色/纸色约 15:1，次要文字约 5.2:1，错误约 5.4:1，警告徽标约 5.5:1；铜色约 4.2:1，仅用于非文本 UI。</li>
+						<li>代码路径走查主窗口、空组、停用组、未加载组、同步中、失败、冲突、版本、设备、规则、首次设置与密码流程。</li>
+					</ul>
+				</div>
+				<div>
+					<div class="mono mb-3 text-xs tracking-widest text-[#f43f5e]">NOT VERIFIED</div>
+					<ul class="space-y-2 text-sm leading-6 text-[#a0a0a0]">
+						<li>未启动 GUI，未截图；首屏观感、字体回退、焦点环外观、托盘图标 16px 效果未观察。</li>
+						<li>150%/200% Windows 缩放下的实际布局未截图验证；第 3 条来自屏幕尺寸推算。</li>
+						<li>读屏软件未实际运行；第 1 条来自缺少可访问通知的代码证据。</li>
+						<li>同步取消、10 GB 文件、局域网中断等长任务行为未实测。</li>
+						<li>Android 端未评审。</li>
+					</ul>
+				</div>
+			</div>
+		</section>
+
+		<footer class="mono py-8 text-center text-xs tracking-widest text-[#444]">
+			Generated with CommandCode - 2026-11-04
+		</footer>
+	</main>
+</body>
+</html>
