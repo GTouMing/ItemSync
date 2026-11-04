@@ -4,6 +4,7 @@ import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.TriggerId;
 import github.gtouming.itemsync.domain.model.FileVersion;
 import github.gtouming.itemsync.domain.model.SyncRoot;
+import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.Trigger;
 import github.gtouming.itemsync.domain.security.NodeUnlockKey;
 import github.gtouming.itemsync.platform.desktop.DesktopConfig;
@@ -37,33 +38,41 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ButtonBar;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
-import javafx.scene.control.ComboBox;
 import javafx.scene.control.Dialog;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
 import javafx.scene.control.PasswordField;
+import javafx.scene.control.ProgressIndicator;
+import javafx.scene.control.ScrollPane;
 import javafx.scene.control.TextField;
+import javafx.scene.control.Toggle;
+import javafx.scene.control.ToggleButton;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.control.Tooltip;
+import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.DirectoryChooser;
 import javafx.stage.Stage;
 import javafx.util.Duration;
-import javafx.util.StringConverter;
 
 import java.awt.AWTException;
+import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Desktop;
 import java.awt.Font;
 import java.awt.Graphics2D;
+import java.awt.RenderingHints;
 import java.awt.SystemTray;
 import java.awt.TrayIcon;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
+import javax.swing.BorderFactory;
 import javax.swing.JMenuItem;
 import javax.swing.JPopupMenu;
 import javax.swing.JWindow;
@@ -106,9 +115,15 @@ public final class DesktopApp extends Application {
     private volatile GroupId selectedGroupId;
     private boolean updatingGroupSelector;
 
+    private static final DateTimeFormatter RUN_TIME =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault());
+
     private final Label nodeLabel = new Label();
-    private final ComboBox<DesktopGroup> groupSelector = new ComboBox<>();
-    private final Label groupsHintLabel = new Label("未配置同步组，请先点击“添加同步组”");
+    private final HBox groupTabs = new HBox();
+    private final ToggleGroup groupToggleGroup = new ToggleGroup();
+    private final Region statusDot = new Region();
+    private final ProgressIndicator progress = new ProgressIndicator();
+    private volatile boolean syncing;
     private final Label groupIdLabel = new Label();
     private final Label groupNameLabel = new Label();
     private final Label rootLabel = new Label();
@@ -231,15 +246,18 @@ public final class DesktopApp extends Application {
         if (fromEnvironment != null && !fromEnvironment.isEmpty()) {
             return fromEnvironment;
         }
-        Dialog<String> dialog = new Dialog<>();
+        Dialog<String> dialog = DesktopTheme.dialog();
         dialog.setTitle("ItemSync");
         dialog.setHeaderText("迁移：输入现有身份密钥口令");
+        Label fieldLabel = new Label("身份密钥口令");
         PasswordField field = new PasswordField();
+        fieldLabel.setLabelFor(field);
+        field.setAccessibleText("身份密钥口令");
         Label hint = new Label("只会要求这一次；之后由 Windows DPAPI 中的 NUK 静默解锁。");
         hint.setWrapText(true);
-        VBox content = new VBox(10, field, hint);
+        VBox content = new VBox(8, fieldLabel, field, hint);
         content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
+        DesktopTheme.fill(dialog, content);
         ButtonType ok = new ButtonType("继续", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(ok, ButtonType.CANCEL);
         dialog.setResultConverter(button -> button == ok ? field.getText() : null);
@@ -261,61 +279,145 @@ public final class DesktopApp extends Application {
         Button exitButton = new Button("退出");
         CheckBox autostart = new CheckBox("开机自启");
 
-        groupSelector.setPrefWidth(340);
-        groupSelector.setConverter(new StringConverter<>() {
-            @Override
-            public String toString(DesktopGroup group) {
-                return group == null ? "" : groupText(group);
-            }
+        Label brandTitle = new Label("ItemSync");
+        brandTitle.getStyleClass().add("brand-title");
+        Label brandSubtitle = new Label("局域网双向同步");
+        brandSubtitle.getStyleClass().add("brand-subtitle");
+        VBox brand = new VBox(1, brandTitle, brandSubtitle);
 
-            @Override
-            public DesktopGroup fromString(String text) {
-                return null;
-            }
-        });
-        groupSelector.setCellFactory(list -> groupCell());
-        groupSelector.setButtonCell(groupCell());
-        groupsHintLabel.setStyle("-fx-text-fill: #6a737d;");
-        groupsHintLabel.setManaged(false);
-        groupsHintLabel.setVisible(false);
-        HBox selectorRow = new HBox(12, groupSelector, groupsHintLabel);
-        selectorRow.setAlignment(Pos.CENTER_LEFT);
+        Region barSpacer = new Region();
+        HBox.setHgrow(barSpacer, Priority.ALWAYS);
+        syncAllButton.getStyleClass().add("secondary-button");
+        syncButton.getStyleClass().add("primary-button");
+        HBox appBar = new HBox(12, brand, barSpacer, syncAllButton, syncButton);
+        appBar.getStyleClass().add("app-bar");
+        appBar.setAlignment(Pos.CENTER_LEFT);
 
-        GridPane grid = new GridPane();
-        grid.setHgap(12);
-        grid.setVgap(8);
-        grid.add(new Label("节点"), 0, 0);
-        grid.add(nodeLabel, 1, 0);
-        grid.add(new Label("同步组"), 0, 1);
-        grid.add(selectorRow, 1, 1);
-        grid.add(new Label("组 ID"), 0, 2);
-        grid.add(groupIdLabel, 1, 2);
-        grid.add(new Label("组名"), 0, 3);
-        grid.add(groupNameLabel, 1, 3);
-        grid.add(new Label("同步根"), 0, 4);
-        rootLabel.setWrapText(true);
-        grid.add(rootLabel, 1, 4);
-        grid.add(new Label("本机指纹"), 0, 5);
-        fingerprintLabel.setWrapText(true);
-        grid.add(fingerprintLabel, 1, 5);
-        grid.add(new Label("最近运行"), 0, 6);
+        Label groupsLabel = new Label("同步组");
+        groupsLabel.getStyleClass().add("section-label");
+        groupTabs.getStyleClass().add("group-tabs");
+        groupTabs.setSpacing(2);
+        groupTabs.setAlignment(Pos.CENTER_LEFT);
+        ScrollPane groupScroll = new ScrollPane(groupTabs);
+        groupScroll.getStyleClass().add("group-scroll");
+        groupScroll.setFitToHeight(true);
+        groupScroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        groupScroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+        groupScroll.setPrefViewportHeight(34);
+        groupScroll.setMinHeight(34);
+        groupScroll.setMaxHeight(48);
+        HBox.setHgrow(groupScroll, Priority.ALWAYS);
+        addGroupButton.getStyleClass().add("ghost-button");
+        groupSettingsButton.getStyleClass().add("ghost-button");
+        HBox groupStrip = new HBox(10, groupsLabel, groupScroll, addGroupButton,
+                groupSettingsButton);
+        groupStrip.getStyleClass().add("group-strip");
+        groupStrip.setAlignment(Pos.CENTER_LEFT);
+
+        Label statusEyebrow = new Label("当前同步组");
+        statusEyebrow.getStyleClass().add("status-eyebrow");
+        groupNameLabel.getStyleClass().add("status-headline");
+        groupNameLabel.setWrapText(true);
+        lastRunLabel.getStyleClass().add("status-detail");
         lastRunLabel.setWrapText(true);
-        grid.add(lastRunLabel, 1, 6);
-
-        conflictLabel.setStyle("-fx-text-fill: #9a6700;");
-        errorLabel.setStyle("-fx-text-fill: #b00020;");
+        statusDot.getStyleClass().setAll("status-dot", "state-idle");
+        statusDot.setMinSize(8, 8);
+        statusDot.setPrefSize(8, 8);
+        statusDot.setMaxSize(8, 8);
+        statusDot.setMouseTransparent(true);
+        progress.setPrefSize(14, 14);
+        progress.setMinSize(14, 14);
+        progress.setMaxSize(14, 14);
+        progress.getStyleClass().add("sync-progress");
+        progress.setAccessibleText("同步进行中");
+        progress.setVisible(false);
+        progress.setManaged(false);
+        HBox statusLine = new HBox(8, statusDot, progress, lastRunLabel);
+        statusLine.setAlignment(Pos.CENTER_LEFT);
+        conflictLabel.getStyleClass().setAll("status-badge", "badge-neutral");
+        errorLabel.getStyleClass().add("error-text");
         errorLabel.setWrapText(true);
+        errorLabel.managedProperty().bind(errorLabel.textProperty().isNotEmpty());
+        errorLabel.visibleProperty().bind(errorLabel.textProperty().isNotEmpty());
+        HBox badges = new HBox(8, conflictLabel);
+        VBox statusBand = new VBox(6, statusEyebrow, groupNameLabel, statusLine, badges,
+                errorLabel);
+        statusBand.getStyleClass().add("status-band");
 
-        HBox groupButtons = new HBox(8, syncButton, syncAllButton, rulesButton, conflictsButton,
-                historyButton, peersButton);
-        HBox windowButtons = new HBox(8, addGroupButton, groupSettingsButton, refreshButton,
-                openDataButton, hideButton, exitButton);
-        VBox root = new VBox(16, grid, conflictLabel, errorLabel, groupButtons, windowButtons,
+        Label rootTitle = new Label("同步根");
+        rootTitle.getStyleClass().add("section-title");
+        GridPane rootGrid = new GridPane();
+        rootGrid.getStyleClass().add("data-grid");
+        rootGrid.setHgap(16);
+        rootGrid.setVgap(8);
+        rootLabel.setWrapText(true);
+        addDataRow(rootGrid, 0, "目录", rootLabel);
+        addDataRow(rootGrid, 1, "组 ID", groupIdLabel);
+        addDataRow(rootGrid, 2, "节点", nodeLabel);
+        groupIdLabel.getStyleClass().add("mono");
+        nodeLabel.getStyleClass().add("mono");
+
+        Label identityTitle = new Label("本机身份");
+        identityTitle.getStyleClass().add("section-title");
+        GridPane identityGrid = new GridPane();
+        identityGrid.getStyleClass().add("data-grid");
+        identityGrid.setHgap(16);
+        identityGrid.setVgap(8);
+        fingerprintLabel.setWrapText(true);
+        addDataRow(identityGrid, 0, "证书指纹", fingerprintLabel);
+        fingerprintLabel.getStyleClass().add("mono");
+
+        VBox mainColumn = new VBox(20, statusBand, rootTitle, rootGrid, identityTitle,
+                identityGrid);
+
+        Label actionTitle = new Label("操作");
+        actionTitle.getStyleClass().add("section-title");
+        VBox actionList = new VBox(2, rulesButton, peersButton, conflictsButton, historyButton);
+        Label maintenanceTitle = new Label("维护");
+        maintenanceTitle.getStyleClass().add("section-title");
+        VBox maintenanceList = new VBox(2, refreshButton, openDataButton);
+        VBox sidePanel = new VBox(20, actionTitle, actionList, maintenanceTitle, maintenanceList,
                 autostart);
-        root.setPadding(new Insets(20));
+        sidePanel.getStyleClass().add("side-panel");
+        sidePanel.setPrefWidth(264);
+        sidePanel.setMinWidth(232);
+        styleSideActions(rulesButton, peersButton, conflictsButton, historyButton, refreshButton,
+                openDataButton);
+        autostart.getStyleClass().add("setting-check");
 
-        stage.setScene(new Scene(root, 940, 560));
+        HBox workspace = new HBox(20, mainColumn, sidePanel);
+        workspace.getStyleClass().add("workspace");
+        workspace.setAlignment(Pos.TOP_LEFT);
+        HBox.setHgrow(mainColumn, Priority.ALWAYS);
+
+        ScrollPane center = new ScrollPane(workspace);
+        center.getStyleClass().add("workspace-scroll");
+        center.setFitToWidth(true);
+        center.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
+
+        Label footerNote = new Label("局域网直连 · 无中心服务器");
+        footerNote.getStyleClass().add("footer-note");
+        Region footerSpacer = new Region();
+        HBox.setHgrow(footerSpacer, Priority.ALWAYS);
+        hideButton.getStyleClass().add("ghost-button");
+        exitButton.getStyleClass().add("ghost-button");
+        HBox footer = new HBox(10, footerNote, footerSpacer, hideButton, exitButton);
+        footer.getStyleClass().add("footer-bar");
+        footer.setAlignment(Pos.CENTER_LEFT);
+
+        BorderPane root = new BorderPane();
+        root.getStyleClass().add("app-shell");
+        root.setTop(new VBox(appBar, groupStrip));
+        root.setCenter(center);
+        root.setBottom(footer);
+
+        stage.setScene(new Scene(root, 1020, 660));
         stage.setTitle("ItemSync");
+        stage.setMinWidth(720);
+        stage.setMinHeight(460);
+        if (DesktopTheme.STYLESHEET != null) {
+            root.getStylesheets().add(DesktopTheme.STYLESHEET);
+        }
         stage.setOnCloseRequest(event -> {
             if (!exiting) {
                 event.consume();
@@ -323,12 +425,20 @@ public final class DesktopApp extends Application {
             }
         });
 
-        groupSelector.getSelectionModel().selectedItemProperty().addListener(
-                (observable, oldGroup, group) -> {
+        groupToggleGroup.selectedToggleProperty().addListener(
+                (observable, oldToggle, newToggle) -> {
                     if (updatingGroupSelector) {
                         return;
                     }
-                    onGroupSelected(group);
+                    if (newToggle == null) {
+                        if (oldToggle != null) {
+                            updatingGroupSelector = true;
+                            oldToggle.setSelected(true);
+                            updatingGroupSelector = false;
+                        }
+                        return;
+                    }
+                    onGroupSelected((DesktopGroup) newToggle.getUserData());
                 });
         syncButton.setOnAction(event -> syncAsync());
         syncAllButton.setOnAction(event -> syncAllAsync());
@@ -347,14 +457,20 @@ public final class DesktopApp extends Application {
         reloadGroups(null);
     }
 
-    private ListCell<DesktopGroup> groupCell() {
-        return new ListCell<>() {
-            @Override
-            protected void updateItem(DesktopGroup group, boolean empty) {
-                super.updateItem(group, empty);
-                setText(empty || group == null ? null : groupText(group));
-            }
-        };
+    private static void styleSideActions(Button... buttons) {
+        for (Button button : buttons) {
+            button.getStyleClass().add("side-action");
+            button.setMaxWidth(Double.MAX_VALUE);
+            button.setAlignment(Pos.CENTER_LEFT);
+        }
+    }
+
+    private static void addDataRow(GridPane grid, int row, String key, Label value) {
+        Label keyLabel = new Label(key);
+        keyLabel.getStyleClass().add("data-key");
+        value.getStyleClass().add("data-value");
+        grid.add(keyLabel, 0, row);
+        grid.add(value, 1, row);
     }
 
     private static String groupText(DesktopGroup group) {
@@ -366,8 +482,8 @@ public final class DesktopApp extends Application {
     }
 
     /**
-     * Rebuilds the selector from the persisted group list. {@code preferred} selects that
-     * group again after an add, rename or delete; null falls back to the first group.
+     * Rebuilds the group strip from the persisted group list. {@code preferred} selects
+     * that group again after an add, rename or delete; null falls back to the first group.
      */
     private void reloadGroups(GroupId preferred) {
         List<DesktopGroup> groups = config.groups();
@@ -377,19 +493,44 @@ public final class DesktopApp extends Application {
         }
         updatingGroupSelector = true;
         try {
-            groupSelector.getItems().setAll(groups);
-            groupSelector.getSelectionModel().select(selection);
-            groupSelector.setPromptText(groups.isEmpty() ? "未配置同步组" : null);
+            for (Toggle toggle : new ArrayList<>(groupToggleGroup.getToggles())) {
+                toggle.setToggleGroup(null);
+            }
+            groupTabs.getChildren().clear();
+            for (DesktopGroup group : groups) {
+                ToggleButton tab = new ToggleButton(groupTabText(group));
+                tab.getStyleClass().add("group-tab");
+                tab.setUserData(group);
+                tab.setToggleGroup(groupToggleGroup);
+                tab.setTooltip(new Tooltip(groupText(group)));
+                tab.setMaxWidth(220);
+                groupTabs.getChildren().add(tab);
+            }
+            if (groups.isEmpty()) {
+                Label empty = new Label("还没有同步组");
+                empty.getStyleClass().add("empty-note");
+                groupTabs.getChildren().add(empty);
+            }
+            if (selection != null) {
+                for (Toggle toggle : groupToggleGroup.getToggles()) {
+                    DesktopGroup group = (DesktopGroup) toggle.getUserData();
+                    if (group.id().equals(selection.id())) {
+                        toggle.setSelected(true);
+                        break;
+                    }
+                }
+            }
         } finally {
             updatingGroupSelector = false;
         }
         selectedGroupId = selection == null ? null : selection.id();
-        boolean empty = groups.isEmpty();
-        groupsHintLabel.setVisible(empty);
-        groupsHintLabel.setManaged(empty);
         renderSelection(selection);
         updateActions();
         refreshAsync();
+    }
+
+    private static String groupTabText(DesktopGroup group) {
+        return group.enabled() ? group.name() : group.name() + "（停用）";
     }
 
     private void onGroupSelected(DesktopGroup group) {
@@ -403,14 +544,14 @@ public final class DesktopApp extends Application {
         GroupId groupId = selectedGroupId;
         boolean hasGroup = groupId != null;
         boolean served = hasGroup && serves(groupId);
-        setDisabled(syncButton, !served);
+        setDisabled(syncButton, !served || syncing);
         setDisabled(conflictsButton, !served);
         setDisabled(historyButton, !served);
         setDisabled(peersButton, !served);
         setDisabled(rulesButton, !served);
         setDisabled(groupSettingsButton, !hasGroup);
         setDisabled(addGroupButton, config.groups().size() >= DesktopConfig.MAX_GROUPS);
-        setDisabled(syncAllButton, service == null || service.groupRuntimes().isEmpty());
+        setDisabled(syncAllButton, service == null || service.groupRuntimes().isEmpty() || syncing);
     }
 
     private boolean serves(GroupId groupId) {
@@ -457,12 +598,10 @@ public final class DesktopApp extends Application {
 
     private void syncAsync() {
         GroupId groupId = selectedGroupId;
-        if (groupId == null || !serves(groupId)) {
+        if (syncing || groupId == null || !serves(groupId)) {
             return;
         }
-        if (syncButton != null) {
-            syncButton.setDisable(true);
-        }
+        setSyncing(true);
         worker.submit(() -> {
             try {
                 service.syncNow(groupId);
@@ -471,7 +610,7 @@ public final class DesktopApp extends Application {
                         "同步失败: " + UserFacingErrors.describe(e)));
             } finally {
                 Platform.runLater(() -> {
-                    updateActions();
+                    setSyncing(false);
                     refreshAsync();
                 });
             }
@@ -479,9 +618,10 @@ public final class DesktopApp extends Application {
     }
 
     private void syncAllAsync() {
-        if (syncAllButton != null) {
-            syncAllButton.setDisable(true);
+        if (syncing) {
+            return;
         }
+        setSyncing(true);
         worker.submit(() -> {
             try {
                 service.syncAllNow();
@@ -490,11 +630,26 @@ public final class DesktopApp extends Application {
                         "同步失败: " + UserFacingErrors.describe(e)));
             } finally {
                 Platform.runLater(() -> {
-                    updateActions();
+                    setSyncing(false);
                     refreshAsync();
                 });
             }
         });
+    }
+
+    private void setSyncing(boolean value) {
+        syncing = value;
+        if (progress != null) {
+            progress.setVisible(value);
+            progress.setManaged(value);
+        }
+        if (syncButton != null) {
+            syncButton.setText(value ? "同步中…" : "立即同步");
+        }
+        if (syncAllButton != null) {
+            syncAllButton.setText(value ? "同步中…" : "全部同步");
+        }
+        updateActions();
     }
 
     private void refreshAsync() {
@@ -523,8 +678,9 @@ public final class DesktopApp extends Application {
     }
 
     private void render(DesktopService.Status status) {
-        nodeLabel.setText(status.nodeId().value() + "  (port " + status.port() + ")");
+        nodeLabel.setText(status.nodeId().value() + "  端口 " + status.port());
         fingerprintLabel.setText(status.fingerprint());
+        updateStatusIndicator(status.lastRun());
         if (status.groupId() == null) {
             if (selectedGroupId == null) {
                 renderSelection(null);
@@ -540,11 +696,15 @@ public final class DesktopApp extends Application {
         groupNameLabel.setText(group == null ? status.groupId().value() : group.name());
         rootLabel.setText(status.root() == null ? "—" : status.root().toString());
         if (status.lastRun() == null) {
-            lastRunLabel.setText("尚未同步");
+            lastRunLabel.setText("最近运行: 尚未同步");
+            lastRunLabel.setTooltip(null);
         } else {
-            lastRunLabel.setText(status.lastRun().state() + "  " + status.lastRun().statsJson());
+            lastRunLabel.setText("最近运行: " + describeRun(status.lastRun()));
+            String stats = status.lastRun().statsJson();
+            lastRunLabel.setTooltip(stats == null || stats.isBlank() ? null : new Tooltip(stats));
         }
         conflictLabel.setText("未解决冲突: " + status.openConflicts());
+        setConflictBadge(status.openConflicts());
         if (conflictsButton != null) {
             conflictsButton.setText(status.openConflicts() == 0
                     ? "处理冲突"
@@ -565,12 +725,14 @@ public final class DesktopApp extends Application {
     }
 
     private void renderSelection(DesktopGroup group) {
+        updateStatusIndicator(null);
         if (group == null) {
-            groupIdLabel.setText("未配置同步组");
-            groupNameLabel.setText("—");
+            groupIdLabel.setText("—");
+            groupNameLabel.setText("未配置同步组");
             rootLabel.setText("—");
-            lastRunLabel.setText("尚未同步");
+            lastRunLabel.setText("最近运行: 尚未同步");
             conflictLabel.setText("未解决冲突: —");
+            setConflictBadge(0);
             errorLabel.setText("");
             if (conflictsButton != null) {
                 conflictsButton.setText("处理冲突");
@@ -583,6 +745,7 @@ public final class DesktopApp extends Application {
         if (!group.enabled()) {
             lastRunLabel.setText("该组已停用");
             conflictLabel.setText("未解决冲突: —");
+            setConflictBadge(0);
             errorLabel.setText("该组已停用：在“组设置”中启用后重启 ItemSync。");
             if (conflictsButton != null) {
                 conflictsButton.setText("处理冲突");
@@ -592,6 +755,7 @@ public final class DesktopApp extends Application {
         if (!serves(group.id())) {
             lastRunLabel.setText("重启 ItemSync 后开始同步");
             conflictLabel.setText("未解决冲突: —");
+            setConflictBadge(0);
             errorLabel.setText("该同步组尚未加载：请重启 ItemSync 使该组开始同步。");
             if (conflictsButton != null) {
                 conflictsButton.setText("处理冲突");
@@ -599,8 +763,44 @@ public final class DesktopApp extends Application {
         } else {
             lastRunLabel.setText("读取中…");
             conflictLabel.setText("未解决冲突: —");
+            setConflictBadge(0);
             errorLabel.setText("");
         }
+    }
+
+    private void updateStatusIndicator(SyncRun run) {
+        String state = "state-idle";
+        if (run != null) {
+            state = switch (run.state()) {
+                case COMPLETED -> "state-ok";
+                case FAILED -> "state-error";
+                case PENDING, QUEUED, SCANNING, PLANNING, TRANSFERRING, APPLYING, REVERSE_PUSH ->
+                        "state-busy";
+                case CANCELLED -> "state-idle";
+            };
+        }
+        statusDot.getStyleClass().setAll("status-dot", state);
+    }
+
+    private void setConflictBadge(int count) {
+        conflictLabel.getStyleClass().setAll("status-badge",
+                count > 0 ? "badge-warning" : "badge-neutral");
+    }
+
+    private static String describeRun(SyncRun run) {
+        String state = switch (run.state()) {
+            case PENDING, QUEUED -> "排队中";
+            case SCANNING -> "扫描中";
+            case PLANNING -> "规划中";
+            case TRANSFERRING -> "传输中";
+            case APPLYING -> "应用中";
+            case REVERSE_PUSH -> "回推中";
+            case COMPLETED -> "已完成";
+            case FAILED -> "失败";
+            case CANCELLED -> "已取消";
+        };
+        var when = run.endedAt() != null ? run.endedAt() : run.startedAt();
+        return when == null ? state : state + "  " + RUN_TIME.format(when);
     }
 
     private void showConflictsAsync() {
@@ -633,9 +833,9 @@ public final class DesktopApp extends Application {
             showInfo(title + "：没有未解决的冲突");
             return;
         }
-        Dialog<Void> dialog = new Dialog<>();
+        Dialog<Void> dialog = DesktopTheme.dialog();
         dialog.setTitle("ItemSync");
-        dialog.setHeaderText("未解决冲突 — " + title + "（" + views.size() + "）");
+        dialog.setHeaderText("未解决冲突：" + title + "（" + views.size() + "）");
 
         ListView<ConflictResolver.ConflictView> list = new ListView<>();
         list.getItems().setAll(views);
@@ -669,7 +869,7 @@ public final class DesktopApp extends Application {
                 + "保留两者只标记冲突已解决，副本会保留。");
         hint.setWrapText(true);
 
-        ButtonType keepRemote = new ButtonType("接受远端", ButtonBar.ButtonData.OK_DONE);
+        ButtonType keepRemote = new ButtonType("接受远端", ButtonBar.ButtonData.OTHER);
         ButtonType keepLocal = new ButtonType("恢复本地", ButtonBar.ButtonData.OTHER);
         ButtonType keepBoth = new ButtonType("保留两者", ButtonBar.ButtonData.OTHER);
         ButtonType close = new ButtonType("关闭", ButtonBar.ButtonData.CANCEL_CLOSE);
@@ -677,10 +877,11 @@ public final class DesktopApp extends Application {
 
         VBox content = new VBox(10, list, hint);
         content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
+        DesktopTheme.fill(dialog, content);
         dialog.getDialogPane().setPrefWidth(760);
 
         Button remoteButton = (Button) dialog.getDialogPane().lookupButton(keepRemote);
+        remoteButton.getStyleClass().add("danger-text");
         Button localButton = (Button) dialog.getDialogPane().lookupButton(keepLocal);
         Button bothButton = (Button) dialog.getDialogPane().lookupButton(keepBoth);
         Runnable updateButtons = () -> {
@@ -717,11 +918,15 @@ public final class DesktopApp extends Application {
         if (selected == null) {
             return;
         }
-        if (resolution == ConflictResolver.Resolution.KEEP_REMOTE && selected.remote() == null) {
-            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
-                    "远端已删除该文件，接受远端会删除本地文件。继续？",
-                    ButtonType.OK, ButtonType.CANCEL);
-            if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+        if (resolution == ConflictResolver.Resolution.KEEP_REMOTE) {
+            String message = selected.remote() == null
+                    ? "远端已删除该文件。接受远端会删除本地文件，且无法撤销。"
+                    : "接受远端会用远端内容覆盖本地副本，且无法撤销。";
+            ButtonType accept = new ButtonType("接受远端", ButtonBar.ButtonData.OTHER);
+            Alert confirm = new Alert(Alert.AlertType.CONFIRMATION, message,
+                    accept, ButtonType.CANCEL);
+            DesktopTheme.apply(confirm);
+            if (confirm.showAndWait().orElse(ButtonType.CANCEL) != accept) {
                 return;
             }
         }
@@ -777,9 +982,9 @@ public final class DesktopApp extends Application {
             showInfo(title + "：同步根中没有已记录的文件版本");
             return;
         }
-        Dialog<Void> dialog = new Dialog<>();
+        Dialog<Void> dialog = DesktopTheme.dialog();
         dialog.setTitle("ItemSync");
-        dialog.setHeaderText("版本历史 — " + title);
+        dialog.setHeaderText("版本历史：" + title);
 
         ListView<VersionHistoryService.ItemView> files = new ListView<>();
         files.getItems().setAll(items);
@@ -821,7 +1026,7 @@ public final class DesktopApp extends Application {
                 new VBox(4, new Label("版本"), versions));
         VBox content = new VBox(10, lists, hint);
         content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
+        DesktopTheme.fill(dialog, content);
         dialog.getDialogPane().setPrefWidth(840);
 
         Button restoreButton = (Button) dialog.getDialogPane().lookupButton(restore);
@@ -862,10 +1067,15 @@ public final class DesktopApp extends Application {
             if (item == null || version == null) {
                 return;
             }
+            ButtonType restoreVersion = new ButtonType("恢复此版本",
+                    ButtonBar.ButtonData.OTHER);
+            ButtonType cancelRestore = new ButtonType("取消",
+                    ButtonBar.ButtonData.CANCEL_CLOSE);
             Alert confirm = new Alert(Alert.AlertType.CONFIRMATION,
                     "用 " + version.mtime() + " 的版本覆盖当前文件？",
-                    ButtonType.OK, ButtonType.CANCEL);
-            if (confirm.showAndWait().orElse(ButtonType.CANCEL) != ButtonType.OK) {
+                    restoreVersion, cancelRestore);
+            DesktopTheme.apply(confirm);
+            if (confirm.showAndWait().orElse(cancelRestore) != restoreVersion) {
                 return;
             }
             worker.submit(() -> {
@@ -913,9 +1123,9 @@ public final class DesktopApp extends Application {
             showInfo(title + "：该组暂无已知设备");
             return;
         }
-        Dialog<Void> dialog = new Dialog<>();
+        Dialog<Void> dialog = DesktopTheme.dialog();
         dialog.setTitle("ItemSync");
-        dialog.setHeaderText("组内设备 — " + title + "（" + peers.size() + "）");
+        dialog.setHeaderText("组内设备：" + title + "（" + peers.size() + "）");
         ListView<PeerTrustCoordinator.PeerView> list = new ListView<>();
         list.getItems().setAll(peers);
         list.setPrefHeight(300);
@@ -951,7 +1161,7 @@ public final class DesktopApp extends Application {
                 + "组 ID 只决定能发现哪些设备；本窗口只显示并信任当前同步组的设备。");
         hint.setWrapText(true);
         Label deviceError = new Label();
-        deviceError.setStyle("-fx-text-fill: #b00020;");
+        deviceError.getStyleClass().add("error-text");
         deviceError.setWrapText(true);
 
         ButtonType pair = new ButtonType("开启信任", ButtonBar.ButtonData.OTHER);
@@ -961,7 +1171,7 @@ public final class DesktopApp extends Application {
         dialog.getDialogPane().getButtonTypes().addAll(pair, revoke, refreshButtonType, close);
         VBox content = new VBox(10, list, hint, deviceError);
         content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
+        DesktopTheme.fill(dialog, content);
         dialog.getDialogPane().setPrefWidth(780);
 
         Button pairButton = (Button) dialog.getDialogPane().lookupButton(pair);
@@ -1171,9 +1381,9 @@ public final class DesktopApp extends Application {
 
     private void showRules(List<Trigger> triggers, GroupId groupId, Stage stage) {
         String title = groupTitle(groupId);
-        Dialog<Void> dialog = new Dialog<>();
+        Dialog<Void> dialog = DesktopTheme.dialog();
         dialog.setTitle("ItemSync");
-        dialog.setHeaderText("同步规则 — " + title);
+        dialog.setHeaderText("同步规则：" + title);
 
         ListView<Trigger> list = new ListView<>();
         list.getItems().setAll(triggers);
@@ -1196,7 +1406,7 @@ public final class DesktopApp extends Application {
                 + "目录变动规则监视该组的同步根。");
         hint.setWrapText(true);
         Label error = new Label();
-        error.setStyle("-fx-text-fill: #b00020;");
+        error.getStyleClass().add("error-text");
         error.setWrapText(true);
 
         ButtonType addAlarm = new ButtonType("添加闹钟规则", ButtonBar.ButtonData.OTHER);
@@ -1208,7 +1418,7 @@ public final class DesktopApp extends Application {
                 close);
         VBox content = new VBox(10, list, hint, error);
         content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
+        DesktopTheme.fill(dialog, content);
         dialog.getDialogPane().setPrefWidth(760);
 
         Button addAlarmButton = (Button) dialog.getDialogPane().lookupButton(addAlarm);
@@ -1225,6 +1435,9 @@ public final class DesktopApp extends Application {
             addAlarmButton.setDisable(locked);
             addDirectoryButton.setDisable(locked || hasDirectoryRule(list.getItems()));
             toggleButton.setDisable(locked || selected == null);
+            toggleButton.setText(selected == null
+                    ? "启用/停用规则"
+                    : selected.enabled() ? "停用规则" : "启用规则");
             deleteButton.setDisable(locked || selected == null);
         };
         list.getSelectionModel().selectedItemProperty().addListener(
@@ -1344,9 +1557,9 @@ public final class DesktopApp extends Application {
     }
 
     private TriggerConfig showAlarmRuleDialog(GroupId groupId) {
-        Dialog<TriggerConfig> dialog = new Dialog<>();
+        Dialog<TriggerConfig> dialog = DesktopTheme.dialog();
         dialog.setTitle("ItemSync");
-        dialog.setHeaderText("添加闹钟规则 — " + groupTitle(groupId));
+        dialog.setHeaderText("添加闹钟规则：" + groupTitle(groupId));
 
         DayOfWeek[] order = {
                 DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
@@ -1359,18 +1572,20 @@ public final class DesktopApp extends Application {
             boxes[index].setSelected(index < 5);
             days.getChildren().add(boxes[index]);
         }
+        Label timeLabel = new Label("时间");
         TextField timeField = new TextField("23:00");
+        timeLabel.setLabelFor(timeField);
+        timeField.setAccessibleText("同步时间，格式 HH:mm");
         Label zone = new Label("时区: " + ZoneId.systemDefault().getId());
         Label hint = new Label("选择星期和时间；到点后触发一次同步。");
         hint.setWrapText(true);
         Label error = new Label();
-        error.setStyle("-fx-text-fill: #b00020;");
+        error.getStyleClass().add("error-text");
         error.setWrapText(true);
 
-        VBox content = new VBox(10, days, new HBox(8, new Label("时间"), timeField), zone, hint,
-                error);
+        VBox content = new VBox(10, days, new HBox(8, timeLabel, timeField), zone, hint, error);
         content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
+        DesktopTheme.fill(dialog, content);
         dialog.getDialogPane().setPrefWidth(430);
 
         ButtonType add = new ButtonType("添加", ButtonBar.ButtonData.OK_DONE);
@@ -1470,12 +1685,15 @@ public final class DesktopApp extends Application {
     }
 
     private boolean confirmDeleteRule(Trigger trigger) {
+        ButtonType deleteRule = new ButtonType("删除规则", ButtonBar.ButtonData.OTHER);
+        ButtonType cancelDelete = new ButtonType("取消", ButtonBar.ButtonData.CANCEL_CLOSE);
         Alert alert = new Alert(Alert.AlertType.CONFIRMATION,
                 "删除规则“" + triggerText(trigger) + "”？\n删除后立即生效。",
-                ButtonType.OK, ButtonType.CANCEL);
+                deleteRule, cancelDelete);
         alert.setTitle("ItemSync");
         alert.setHeaderText(null);
-        return alert.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        DesktopTheme.apply(alert);
+        return alert.showAndWait().orElse(cancelDelete) == deleteRule;
     }
 
     /**
@@ -1487,16 +1705,25 @@ public final class DesktopApp extends Application {
             showInfo("最多只能有 " + DesktopConfig.MAX_GROUPS + " 个同步组。");
             return;
         }
-        Dialog<Boolean> dialog = new Dialog<>();
+        Dialog<Boolean> dialog = DesktopTheme.dialog();
         dialog.setTitle("ItemSync");
         dialog.setHeaderText("添加同步组");
         dialog.setResizable(true);
 
+        Label nameLabel = new Label("组名");
         TextField nameField = new TextField();
+        nameLabel.setLabelFor(nameField);
+        nameField.setAccessibleText("组名");
         nameField.setPromptText("例如 工作（留空则使用组 ID）");
+        Label idLabel = new Label("组 ID");
         TextField idField = new TextField(GroupId.random().value());
+        idLabel.setLabelFor(idField);
+        idField.setAccessibleText("组 ID");
         idField.setPromptText("8 位 [0-9a-z]；加入已有组时填写对方的组 ID");
+        Label rootFieldLabel = new Label("同步根");
         TextField rootField = new TextField(nextGroupRoot().toString());
+        rootFieldLabel.setLabelFor(rootField);
+        rootField.setAccessibleText("同步根");
         Button browse = new Button("浏览...");
         browse.setOnAction(event -> {
             DirectoryChooser chooser = new DirectoryChooser();
@@ -1525,19 +1752,19 @@ public final class DesktopApp extends Application {
         Label restartHint = new Label("新组在重启 ItemSync 后开始同步。");
         restartHint.setWrapText(true);
         Label error = new Label();
-        error.setStyle("-fx-text-fill: #b00020;");
+        error.getStyleClass().add("error-text");
         error.setWrapText(true);
 
         GridPane grid = new GridPane();
         grid.setHgap(12);
         grid.setVgap(8);
-        grid.addRow(0, new Label("组名"), nameField);
-        grid.addRow(1, new Label("组 ID"), idField);
-        grid.addRow(2, new Label("同步根"), rootBox);
+        grid.addRow(0, nameLabel, nameField);
+        grid.addRow(1, idLabel, idField);
+        grid.addRow(2, rootFieldLabel, rootBox);
 
         VBox content = new VBox(12, grid, hint, restartHint, error);
         content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
+        DesktopTheme.fill(dialog, content);
         dialog.getDialogPane().setPrefWidth(620);
 
         ButtonType add = new ButtonType("添加", ButtonBar.ButtonData.OK_DONE);
@@ -1628,15 +1855,24 @@ public final class DesktopApp extends Application {
             showInfo("本机还没有同步组。");
             return;
         }
-        Dialog<Boolean> dialog = new Dialog<>();
+        Dialog<Boolean> dialog = DesktopTheme.dialog();
         dialog.setTitle("ItemSync");
-        dialog.setHeaderText("组设置 — " + groupText(group));
+        dialog.setHeaderText("组设置：" + groupText(group));
 
+        Label idLabel = new Label("组 ID");
         TextField idField = new TextField(group.id().value());
         idField.setEditable(false);
+        idLabel.setLabelFor(idField);
+        idField.setAccessibleText("组 ID");
+        Label nameLabel = new Label("组名");
+        TextField nameField = new TextField(group.name());
+        nameLabel.setLabelFor(nameField);
+        nameField.setAccessibleText("组名");
+        Label rootFieldLabel = new Label("同步根");
         TextField rootField = new TextField(group.root().toString());
         rootField.setEditable(false);
-        TextField nameField = new TextField(group.name());
+        rootFieldLabel.setLabelFor(rootField);
+        rootField.setAccessibleText("同步根");
 
         Label hint = new Label("组 ID 添加后不可修改；需要更换组 ID 请删除该组后重新添加。\n"
                 + "更换同步根会清空该组的版本、冲突、同步游标与运行记录，"
@@ -1644,19 +1880,19 @@ public final class DesktopApp extends Application {
                 + "组名只在本机显示，不会同步给其他设备。");
         hint.setWrapText(true);
         Label error = new Label();
-        error.setStyle("-fx-text-fill: #b00020;");
+        error.getStyleClass().add("error-text");
         error.setWrapText(true);
 
         GridPane grid = new GridPane();
         grid.setHgap(12);
         grid.setVgap(8);
-        grid.addRow(0, new Label("组 ID"), idField);
-        grid.addRow(1, new Label("组名"), nameField);
-        grid.addRow(2, new Label("同步根"), rootField);
+        grid.addRow(0, idLabel, idField);
+        grid.addRow(1, nameLabel, nameField);
+        grid.addRow(2, rootFieldLabel, rootField);
 
         VBox content = new VBox(12, grid, hint, error);
         content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
+        DesktopTheme.fill(dialog, content);
         dialog.getDialogPane().setPrefWidth(640);
 
         ButtonType save = new ButtonType("保存名称", ButtonBar.ButtonData.OK_DONE);
@@ -1757,18 +1993,21 @@ public final class DesktopApp extends Application {
     }
 
     private boolean confirmChangeRoot(DesktopGroup group, Path newRoot) {
+        ButtonType change = new ButtonType("更换同步根", ButtonBar.ButtonData.OTHER);
+        ButtonType cancelChange = new ButtonType("取消", ButtonBar.ButtonData.CANCEL_CLOSE);
         Alert alert = new Alert(Alert.AlertType.WARNING,
                 "更换同步根会停止该组同步，并清空该组的版本、冲突、同步游标与运行记录。\n"
                         + "组 ID、信任、规则和设备列表保留；旧目录中的文件不会被删除。\n\n"
                         + "旧根: " + group.root() + "\n新根: " + newRoot,
-                ButtonType.OK, ButtonType.CANCEL);
+                change, cancelChange);
         alert.setTitle("ItemSync");
         alert.setHeaderText("更换 " + groupText(group) + " 的同步根？");
-        return alert.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK;
+        DesktopTheme.apply(alert);
+        return alert.showAndWait().orElse(cancelChange) == change;
     }
 
     private boolean confirmDeleteGroup(DesktopGroup group) {
-        Dialog<Boolean> dialog = new Dialog<>();
+        Dialog<Boolean> dialog = DesktopTheme.dialog();
         dialog.setTitle("ItemSync");
         dialog.setHeaderText("删除同步组 " + groupText(group) + "？");
         Label warning = new Label("· 本地同步根中的文件会保留，不会被删除。\n"
@@ -1778,7 +2017,7 @@ public final class DesktopApp extends Application {
         warning.setWrapText(true);
         VBox content = new VBox(10, warning);
         content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
+        DesktopTheme.fill(dialog, content);
         ButtonType confirm = new ButtonType("确认删除", ButtonBar.ButtonData.OK_DONE);
         dialog.getDialogPane().getButtonTypes().addAll(confirm, ButtonType.CANCEL);
         dialog.setResultConverter(button -> button == confirm ? Boolean.TRUE : null);
@@ -1798,6 +2037,7 @@ public final class DesktopApp extends Application {
                 restart, later);
         alert.setTitle("ItemSync");
         alert.setHeaderText(null);
+        DesktopTheme.apply(alert);
         if (alert.showAndWait().orElse(later) == restart) {
             restart(stage, executable);
         }
@@ -1840,6 +2080,7 @@ public final class DesktopApp extends Application {
                 executable == null ? message + "\n\n请手动重新启动 ItemSync。" : message, exit);
         alert.setTitle("ItemSync");
         alert.setHeaderText(null);
+        DesktopTheme.apply(alert);
         alert.showAndWait();
         restart(stage, executable);
     }
@@ -1918,8 +2159,20 @@ public final class DesktopApp extends Application {
         }
         BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_ARGB);
         Graphics2D graphics = image.createGraphics();
-        graphics.setColor(new Color(45, 108, 223));
+        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING,
+                RenderingHints.VALUE_ANTIALIAS_ON);
+        graphics.setColor(new Color(0xF4F1EA));
         graphics.fillRoundRect(0, 0, 16, 16, 4, 4);
+        graphics.setStroke(new BasicStroke(1.6f, BasicStroke.CAP_ROUND,
+                BasicStroke.JOIN_ROUND));
+        graphics.setColor(new Color(0x171B1E));
+        graphics.drawLine(3, 6, 12, 6);
+        graphics.drawLine(9, 4, 12, 6);
+        graphics.drawLine(9, 8, 12, 6);
+        graphics.setColor(new Color(0xB45309));
+        graphics.drawLine(4, 10, 13, 10);
+        graphics.drawLine(4, 10, 7, 8);
+        graphics.drawLine(4, 10, 7, 12);
         graphics.dispose();
 
         trayIcon = new TrayIcon(image, "ItemSync");
@@ -1945,12 +2198,11 @@ public final class DesktopApp extends Application {
         popup.setLightWeightPopupEnabled(false);
         Font font = trayFont();
         popup.setFont(font);
-        JMenuItem open = new JMenuItem("打开");
-        JMenuItem sync = new JMenuItem("立即同步");
-        JMenuItem exitItem = new JMenuItem("退出");
-        open.setFont(font);
-        sync.setFont(font);
-        exitItem.setFont(font);
+        popup.setBackground(new Color(0xFBFAF6));
+        popup.setBorder(BorderFactory.createLineBorder(new Color(0xD9D3C7)));
+        JMenuItem open = trayItem("打开", font);
+        JMenuItem sync = trayItem("立即同步", font);
+        JMenuItem exitItem = trayItem("退出", font);
         open.addActionListener(action -> Platform.runLater(() -> openWindow(stage)));
         sync.addActionListener(action -> Platform.runLater(this::syncAsync));
         exitItem.addActionListener(action -> Platform.runLater(() -> exit(stage)));
@@ -1959,6 +2211,15 @@ public final class DesktopApp extends Application {
         popup.addSeparator();
         popup.add(exitItem);
         popup.show(trayMenuOwner(), event.getXOnScreen(), event.getYOnScreen());
+    }
+
+    private static JMenuItem trayItem(String text, Font font) {
+        JMenuItem item = new JMenuItem(text);
+        item.setFont(font);
+        item.setBackground(new Color(0xFBFAF6));
+        item.setForeground(new Color(0x171B1E));
+        item.setBorderPainted(false);
+        return item;
     }
 
     private JWindow trayMenuOwner() {
@@ -2034,16 +2295,20 @@ public final class DesktopApp extends Application {
     }
 
     private void showInfo(String message) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION, message, ButtonType.OK);
+        ButtonType close = new ButtonType("关闭", ButtonBar.ButtonData.OK_DONE);
+        Alert alert = new Alert(Alert.AlertType.INFORMATION, message, close);
         alert.setTitle("ItemSync");
         alert.setHeaderText(null);
+        DesktopTheme.apply(alert);
         alert.showAndWait();
     }
 
     private void showError(String message) {
-        Alert alert = new Alert(Alert.AlertType.ERROR, message, ButtonType.OK);
+        ButtonType close = new ButtonType("关闭", ButtonBar.ButtonData.OK_DONE);
+        Alert alert = new Alert(Alert.AlertType.ERROR, message, close);
         alert.setTitle("ItemSync");
         alert.setHeaderText(null);
+        DesktopTheme.apply(alert);
         alert.showAndWait();
     }
 

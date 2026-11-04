@@ -29,7 +29,7 @@ public final class DesktopSetupDialog {
     }
 
     public static boolean show(Path dataDir) {
-        Dialog<Boolean> dialog = new Dialog<>();
+        Dialog<Boolean> dialog = DesktopTheme.dialog();
         dialog.setTitle("ItemSync");
         dialog.setHeaderText("设置同步根");
         dialog.setResizable(true);
@@ -56,27 +56,36 @@ public final class DesktopSetupDialog {
         HBox rootBox = new HBox(8, rootField, browse);
         HBox.setHgrow(rootField, Priority.ALWAYS);
 
+        Label rootLabel = new Label("同步根");
+        rootLabel.setLabelFor(rootField);
+        rootField.setAccessibleText("同步根");
         TextField groupField = new TextField(GroupId.random().value());
+        Label groupLabel = new Label("组 ID");
+        groupLabel.setLabelFor(groupField);
+        groupField.setAccessibleText("组 ID");
         TextField portField = new TextField("47800");
+        Label portLabel = new Label("端口");
+        portLabel.setLabelFor(portField);
+        portField.setAccessibleText("端口");
 
         Label hint = new Label("本机密码已单独设置；身份由 Windows DPAPI 中的 NUK 静默解锁。\n"
-                + "同组设备会通过局域网发现，在“局域网设备”里用 6 位短码完成信任。");
+                + "同组设备会通过局域网发现，在“局域网设备”里由双方各自开启信任。");
         hint.setWrapText(true);
 
         Label errorLabel = new Label();
-        errorLabel.setStyle("-fx-text-fill: #b00020;");
+        errorLabel.getStyleClass().add("error-text");
         errorLabel.setWrapText(true);
 
         GridPane grid = new GridPane();
         grid.setHgap(12);
         grid.setVgap(8);
-        grid.addRow(0, new Label("同步根"), rootBox);
-        grid.addRow(1, new Label("组 ID"), groupField);
-        grid.addRow(2, new Label("端口"), portField);
+        grid.addRow(0, rootLabel, rootBox);
+        grid.addRow(1, groupLabel, groupField);
+        grid.addRow(2, portLabel, portField);
 
         VBox content = new VBox(12, grid, hint, errorLabel);
         content.setPadding(new Insets(10));
-        dialog.getDialogPane().setContent(content);
+        DesktopTheme.fill(dialog, content);
         dialog.getDialogPane().setPrefWidth(580);
 
         ButtonType create = new ButtonType("创建", ButtonBar.ButtonData.OK_DONE);
