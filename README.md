@@ -6,11 +6,11 @@ ItemSync 是面向 Windows 和 Android 的局域网双向文件同步项目。�
 
 ## 当前状态
 
-| 部分 | 已接入的主要能力 |
-| --- | --- |
-| 共享核心 | 文件扫描、双向同步、版本历史、冲突处理、TLS 传输和元数据存储 |
-| Windows 桌面端 | 主窗口与系统托盘、开机启动、本机密码、同组设备发现与在线状态、远端信任状态、信任开关、成对信任、修改组 ID、本机数据重置 |
-| Android 端 | 配置界面、本机密码、Keystore 身份解锁、同组发现与在线状态、信任开关、成对信任、前台同步服务（发现与信任未真机验证）；最低 Android 10（API 29） |
+| 部分           | 已接入的主要能力                                                                                                                               |
+|----------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| 共享核心       | 文件扫描、双向同步、版本历史、冲突处理、TLS 传输和元数据存储                                                                                   |
+| Windows 桌面端 | 主窗口与系统托盘、开机启动、本机密码、同组设备发现与在线状态、远端信任状态、信任开关、成对信任、修改组 ID、本机数据重置                        |
+| Android 端     | 配置界面、本机密码、Keystore 身份解锁、同组发现与在线状态、信任开关、成对信任、前台同步服务（发现与信任未真机验证）；最低 Android 10（API 29） |
 
 当前限制：
 
@@ -85,17 +85,17 @@ android/build/outputs/apk/debug/android-debug.apk
 
 ## 仓库结构
 
-| 模块 | 职责 |
-| --- | --- |
-| [`core-domain`](<core-domain/>) | 领域模型、身份、安全基础能力和平台兼容辅助代码 |
-| [`core-store`](<core-store/>) | 元数据存储接口和持久化基础设施 |
-| [`core-store-testkit`](<core-store-testkit/>) | 元数据存储实现的共用契约测试 |
-| [`core-sync`](<core-sync/>) | 同步引擎、节点编排、冲突及版本处理 |
-| [`core-transport`](<core-transport/>) | 帧协议、TLS 连接和局域网发现 |
-| [`platform-desktop`](<platform-desktop/>) | Windows 平台能力与本机安全支持 |
-| [`desktop`](<desktop/>) | JavaFX 桌面应用及 Windows 打包 |
-| [`android`](<android/>) | Android 应用及平台适配 |
-| [`cli`](<cli/>) | 命令行入口 |
+| 模块                                          | 职责                                           |
+|-----------------------------------------------|------------------------------------------------|
+| [`core-domain`](<core-domain/>)               | 领域模型、身份、安全基础能力和平台兼容辅助代码 |
+| [`core-store`](<core-store/>)                 | 元数据存储接口和持久化基础设施                 |
+| [`core-store-testkit`](<core-store-testkit/>) | 元数据存储实现的共用契约测试                   |
+| [`core-sync`](<core-sync/>)                   | 同步引擎、节点编排、冲突及版本处理             |
+| [`core-transport`](<core-transport/>)         | 帧协议、TLS 连接和局域网发现                   |
+| [`platform-desktop`](<platform-desktop/>)     | Windows 平台能力与本机安全支持                 |
+| [`desktop`](<desktop/>)                       | JavaFX 桌面应用及 Windows 打包                 |
+| [`android`](<android/>)                       | Android 应用及平台适配                         |
+| [`cli`](<cli/>)                               | 命令行入口                                     |
 
 ## 文档与贡献
 

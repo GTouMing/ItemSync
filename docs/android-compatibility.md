@@ -4,17 +4,17 @@
 
 ## 已确认不可用的 API
 
-| Java API | Android 起始版本 | 替代 |
-|----------|------------------|------|
-| `Path.of` | API 34 | `Compat.path`（内部 `Paths.get`） |
-| `List.of` / `Map.of` / `Set.of` | API 30 | `Compat.list` / `Compat.map` / `Compat.set` |
-| `List.copyOf` / `Map.copyOf` / `Set.copyOf` | API 30 | `Compat.copyList` / `Compat.copyMap` / `Compat.copySet` |
-| `String.isBlank` / `strip` | API 33 | `Compat.isBlank` / `trim` |
-| `InputStream.readAllBytes` / `transferTo` | API 33 | `Compat.readAllBytes` / `Compat.copy` |
-| `Optional.isEmpty` | API 33 | `!optional.isPresent()` |
-| `Stream.toList` | API 34 | `collect(Collectors.toList())` |
-| `HexFormat` | 不存在 | `Compat.hex` |
-| `Files.readString` / `writeString` | 不存在 | `Compat.readString` / `Compat.writeString` |
+| Java API                                    | Android 起始版本 | 替代                                                    |
+|---------------------------------------------|------------------|---------------------------------------------------------|
+| `Path.of`                                   | API 34           | `Compat.path`（内部 `Paths.get`）                       |
+| `List.of` / `Map.of` / `Set.of`             | API 30           | `Compat.list` / `Compat.map` / `Compat.set`             |
+| `List.copyOf` / `Map.copyOf` / `Set.copyOf` | API 30           | `Compat.copyList` / `Compat.copyMap` / `Compat.copySet` |
+| `String.isBlank` / `strip`                  | API 33           | `Compat.isBlank` / `trim`                               |
+| `InputStream.readAllBytes` / `transferTo`   | API 33           | `Compat.readAllBytes` / `Compat.copy`                   |
+| `Optional.isEmpty`                          | API 33           | `!optional.isPresent()`                                 |
+| `Stream.toList`                             | API 34           | `collect(Collectors.toList())`                          |
+| `HexFormat`                                 | 不存在           | `Compat.hex`                                            |
+| `Files.readString` / `writeString`          | 不存在           | `Compat.readString` / `Compat.writeString`              |
 
 ## 约束
 
