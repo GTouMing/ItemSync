@@ -7,9 +7,13 @@ import java.util.Objects;
 
 /**
  * One persisted sync group of the Android installation: the immutable group id, the local
- * name (never synced) and the single local sync root of that group (ADR-0035).
+ * name (never synced), the single local sync root and whether the group is enabled.
  */
-public record AndroidGroup(GroupId id, String name, String rootPath) {
+public record AndroidGroup(GroupId id, String name, String rootPath, boolean enabled) {
+
+    public AndroidGroup(GroupId id, String name, String rootPath) {
+        this(id, name, rootPath, true);
+    }
 
     public AndroidGroup {
         Objects.requireNonNull(id, "id");

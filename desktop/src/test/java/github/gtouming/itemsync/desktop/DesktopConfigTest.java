@@ -211,6 +211,24 @@ class DesktopConfigTest {
     }
 
     @Test
+    void persistsTheEnabledFlagOfEachGroup() throws Exception {
+        Path rootA = Files.createDirectories(temp.resolve("root-a"));
+        Path rootB = Files.createDirectories(temp.resolve("root-b"));
+        GroupId groupA = GroupId.parse("group001");
+        GroupId groupB = GroupId.parse("group002");
+        DesktopConfig config = DesktopConfig.create(temp, List.of(
+                        new DesktopGroup(groupA, "a", rootA),
+                        new DesktopGroup(groupB, "b", rootB)),
+                PORT, "", Duration.ofSeconds(30));
+
+        config = config.setGroupEnabled(groupB, false);
+
+        DesktopConfig reloaded = DesktopConfig.load(temp);
+        assertEquals(true, reloaded.findGroup(groupA).orElseThrow().enabled());
+        assertEquals(false, reloaded.findGroup(groupB).orElseThrow().enabled());
+    }
+
+    @Test
     void addsRenamesAndRemovesGroups() throws Exception {
         Path rootA = Files.createDirectories(temp.resolve("root-a"));
         Path rootB = Files.createDirectories(temp.resolve("root-b"));

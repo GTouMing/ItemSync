@@ -70,6 +70,25 @@ public class AndroidSyncConfigTest {
     }
 
     @Test
+    public void persistsTheEnabledFlagOfEachGroup() {
+        File rootA = new File(context.getCacheDir(), "root-a");
+        File rootB = new File(context.getCacheDir(), "root-b");
+        config.saveGroups(List.of(
+                new AndroidGroup(GroupId.parse("group001"), "a", rootA.getAbsolutePath()),
+                new AndroidGroup(GroupId.parse("group002"), "b", rootB.getAbsolutePath())),
+                47800, 300);
+
+        config.setGroupEnabled(GroupId.parse("group002"), false);
+
+        List<AndroidGroup> reloaded = config.groups();
+        assertTrue(reloaded.get(0).enabled());
+        assertFalse(reloaded.get(1).enabled());
+        assertTrue(config.hasEnabledGroups());
+        config.setGroupEnabled(GroupId.parse("group001"), false);
+        assertFalse(config.hasEnabledGroups());
+    }
+
+    @Test
     public void rejectsOverlappingRoots() {
         File root = new File(context.getCacheDir(), "root");
         File nested = new File(root, "nested");

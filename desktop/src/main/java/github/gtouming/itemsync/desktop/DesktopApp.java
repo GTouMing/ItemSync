@@ -179,9 +179,10 @@ public final class DesktopApp extends Application {
         refreshAsync();
         statusScheduler.scheduleWithFixedDelay(this::queryStatus, 2, 2, TimeUnit.SECONDS);
         statusScheduler.scheduleWithFixedDelay(this::reconcileTrustedPeers, 10, 10, TimeUnit.SECONDS);
-        if (!configExists || !config.hasGroups()) {
-            // A new installation, and a configuration without any group, starts on the window
-            // so the user sees the empty state and can add the first group.
+        if (!configExists || !config.hasGroups()
+                || config.groups().stream().noneMatch(DesktopGroup::enabled)) {
+            // A new installation, no group, or only disabled groups starts on the window so
+            // the user can add or enable one.
             stage.show();
         }
     }
@@ -358,9 +359,10 @@ public final class DesktopApp extends Application {
 
     private static String groupText(DesktopGroup group) {
         String name = group.name();
-        return name.equals(group.id().value())
+        String text = name.equals(group.id().value())
                 ? group.id().value()
                 : name + " (" + group.id().value() + ")";
+        return group.enabled() ? text : text + "（已停用）";
     }
 
     /**
@@ -578,6 +580,15 @@ public final class DesktopApp extends Application {
         groupIdLabel.setText(group.id().value());
         groupNameLabel.setText(group.name());
         rootLabel.setText(group.root().toString());
+        if (!group.enabled()) {
+            lastRunLabel.setText("该组已停用");
+            conflictLabel.setText("未解决冲突: —");
+            errorLabel.setText("该组已停用：在“组设置”中启用后重启 ItemSync。");
+            if (conflictsButton != null) {
+                conflictsButton.setText("处理冲突");
+            }
+            return;
+        }
         if (!serves(group.id())) {
             lastRunLabel.setText("重启 ItemSync 后开始同步");
             conflictLabel.setText("未解决冲突: —");
@@ -1649,14 +1660,17 @@ public final class DesktopApp extends Application {
         dialog.getDialogPane().setPrefWidth(640);
 
         ButtonType save = new ButtonType("保存名称", ButtonBar.ButtonData.OK_DONE);
+        ButtonType toggle = new ButtonType(group.enabled() ? "停用此组" : "启用此组",
+                ButtonBar.ButtonData.OTHER);
         ButtonType changeRoot = new ButtonType("更换同步根", ButtonBar.ButtonData.OTHER);
         ButtonType delete = new ButtonType("删除此组", ButtonBar.ButtonData.OTHER);
         ButtonType close = new ButtonType("关闭", ButtonBar.ButtonData.CANCEL_CLOSE);
-        dialog.getDialogPane().getButtonTypes().addAll(save, changeRoot, delete, close);
+        dialog.getDialogPane().getButtonTypes().addAll(save, toggle, changeRoot, delete, close);
         dialog.setResultConverter(button -> button == save ? Boolean.TRUE : null);
 
         AtomicBoolean deleted = new AtomicBoolean();
         AtomicBoolean rootChanged = new AtomicBoolean();
+        AtomicBoolean toggled = new AtomicBoolean();
         Button saveButton = (Button) dialog.getDialogPane().lookupButton(save);
         saveButton.addEventFilter(ActionEvent.ACTION, event -> {
             try {
@@ -1664,6 +1678,17 @@ public final class DesktopApp extends Application {
             } catch (Exception e) {
                 error.setText("保存失败: " + e.getMessage());
                 event.consume();
+            }
+        });
+        Button toggleButton = (Button) dialog.getDialogPane().lookupButton(toggle);
+        toggleButton.addEventFilter(ActionEvent.ACTION, event -> {
+            event.consume();
+            try {
+                config = config.setGroupEnabled(group.id(), !group.enabled());
+                toggled.set(true);
+                dialog.close();
+            } catch (Exception e) {
+                error.setText("切换失败: " + e.getMessage());
             }
         });
         Button changeRootButton = (Button) dialog.getDialogPane().lookupButton(changeRoot);
@@ -1719,6 +1744,12 @@ public final class DesktopApp extends Application {
             showRestartRequired("已更换同步组 " + groupText(group) + " 的同步根。\n"
                     + "旧目录中的文件保留；该组的版本、冲突、游标与运行记录已清空。\n"
                     + "重启 ItemSync 后从新目录重新扫描。", stage);
+        } else if (toggled.get()) {
+            boolean enabled = !group.enabled();
+            showRestartRequired("已" + (enabled ? "启用" : "停用") + "同步组 "
+                    + groupText(group) + "。\n"
+                    + "重启 ItemSync 后" + (enabled ? "开始" : "停止")
+                    + "该组的发现、同步与连接。", stage);
         } else if (saved) {
             reloadGroups(group.id());
             refreshAsync();

@@ -96,6 +96,28 @@ class DesktopServiceTest {
     }
 
     @Test
+    void doesNotServeDisabledGroupsButKeepsTheirTrust() throws Exception {
+        Path data = temp.resolve("data");
+        Path rootA = Files.createDirectories(temp.resolve("root-a"));
+        Path rootB = Files.createDirectories(temp.resolve("root-b"));
+        GroupId groupA = GroupId.parse("group001");
+        GroupId groupB = GroupId.parse("group002");
+        TrustStore trustStore = new TrustStore(data);
+        trustStore.trust(groupB, "fp-disabled");
+        DesktopConfig config = DesktopConfig.create(data, List.of(
+                        new DesktopGroup(groupA, "启用", rootA, true),
+                        new DesktopGroup(groupB, "停用", rootB, false)),
+                freePort(), "", Duration.ofSeconds(30));
+
+        try (DesktopService service = DesktopService.open(config, PASSWORD)) {
+            assertEquals(Set.of(groupA), service.groupRuntimes().keySet());
+            assertThrows(IllegalArgumentException.class, () -> service.peerViews(groupB));
+        }
+        assertEquals(List.of("fp-disabled"), new TrustStore(data).fingerprints(groupB),
+                "a disabled group keeps its trust for a later re-enable");
+    }
+
+    @Test
     void reportsTheStatusOfTheSelectedGroup() throws Exception {
         Path data = temp.resolve("data");
         Path rootA = Files.createDirectories(temp.resolve("root-a"));

@@ -79,7 +79,8 @@ public final class AndroidSyncConfig {
                             "missing sync group entry: " + prefix);
                 }
                 groups.add(new AndroidGroup(GroupId.parse(rawId),
-                        prefs.getString(prefix + "name", null), rawRoot));
+                        prefs.getString(prefix + "name", null), rawRoot,
+                        prefs.getBoolean(prefix + "enabled", true)));
             }
             return validate(groups);
         }
@@ -181,7 +182,7 @@ public final class AndroidSyncConfig {
         } else {
             AndroidGroup first = current.get(0);
             current.set(0, new AndroidGroup(replacement.id(), first.name(),
-                    replacement.rootPath()));
+                    replacement.rootPath(), first.enabled()));
         }
         saveGroups(current, port, intervalSeconds);
     }
@@ -209,12 +210,14 @@ public final class AndroidSyncConfig {
             editor.putString(prefix + "id", group.id().value());
             editor.putString(prefix + "name", group.name());
             editor.putString(prefix + "root", group.rootPath());
+            editor.putBoolean(prefix + "enabled", group.enabled());
         }
         for (int index = validated.size() + 1; index <= MAX_GROUPS; index++) {
             String prefix = "group." + index + ".";
             editor.remove(prefix + "id");
             editor.remove(prefix + "name");
             editor.remove(prefix + "root");
+            editor.remove(prefix + "enabled");
         }
         // Legacy peer pinning is replaced by the per-group trust store.
         editor.remove("root-id");
@@ -240,6 +243,33 @@ public final class AndroidSyncConfig {
         saveGroups(updated);
     }
 
+    public void setGroupEnabled(GroupId id, boolean enabled) {
+        Objects.requireNonNull(id, "id");
+        List<AndroidGroup> updated = new ArrayList<>(groups().size());
+        boolean found = false;
+        for (AndroidGroup group : groups()) {
+            if (group.id().equals(id)) {
+                updated.add(new AndroidGroup(group.id(), group.name(), group.rootPath(), enabled));
+                found = true;
+            } else {
+                updated.add(group);
+            }
+        }
+        if (!found) {
+            throw new IllegalArgumentException("unknown sync group: " + id.value());
+        }
+        saveGroups(updated);
+    }
+
+    public boolean hasEnabledGroups() {
+        for (AndroidGroup group : groups()) {
+            if (group.enabled()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void removeGroup(GroupId id) {
         Objects.requireNonNull(id, "id");
         List<AndroidGroup> updated = new ArrayList<>(groups());
@@ -260,7 +290,7 @@ public final class AndroidSyncConfig {
         boolean found = false;
         for (AndroidGroup group : groups()) {
             if (group.id().equals(id)) {
-                updated.add(new AndroidGroup(group.id(), group.name(), root));
+                updated.add(new AndroidGroup(group.id(), group.name(), root, group.enabled()));
                 found = true;
             } else {
                 updated.add(group);
@@ -278,7 +308,7 @@ public final class AndroidSyncConfig {
         boolean found = false;
         for (AndroidGroup group : groups()) {
             if (group.id().equals(id)) {
-                updated.add(new AndroidGroup(group.id(), name, group.rootPath()));
+                updated.add(new AndroidGroup(group.id(), name, group.rootPath(), group.enabled()));
                 found = true;
             } else {
                 updated.add(group);

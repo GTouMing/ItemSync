@@ -108,10 +108,12 @@ public final class DesktopService implements AutoCloseable {
         for (DesktopGroup group : groups) {
             Files.createDirectories(group.root());
         }
+        List<DesktopGroup> activeGroups = groups.stream()
+                .filter(DesktopGroup::enabled)
+                .toList();
 
         TrustStore trustStore = new TrustStore(config.dataDir());
-        // A device keeps the trust of exactly the groups it still serves, so deleting a group
-        // (or the last group) drops its trust pairs on the next start (ADR-0035 §13).
+        // A disabled group keeps its trust for a later re-enable; a deleted group does not.
         trustStore.retainOnly(groups.stream().map(DesktopGroup::id).toList());
 
         JdbcMetadataStore store = openStore(config.dataDir());
@@ -121,11 +123,11 @@ public final class DesktopService implements AutoCloseable {
         SyncDevice device = null;
         List<GroupSession> sessions = new ArrayList<>();
         try {
-            if (!groups.isEmpty()) {
-                device = openDevice(nodeId, deviceId, identity, store, blobs, physical, groups,
-                        trustStore, config);
+            if (!activeGroups.isEmpty()) {
+                device = openDevice(nodeId, deviceId, identity, store, blobs, physical,
+                        activeGroups, trustStore, config);
             }
-            for (DesktopGroup group : groups) {
+            for (DesktopGroup group : activeGroups) {
                 GroupRuntime runtime = device == null ? null : device.group(group.id());
                 if (runtime == null) {
                     throw new IllegalStateException(

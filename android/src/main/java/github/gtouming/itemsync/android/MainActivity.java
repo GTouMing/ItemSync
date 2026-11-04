@@ -312,10 +312,13 @@ public final class MainActivity extends Activity {
         Button syncNow = new Button(this);
         syncNow.setText("立即同步");
         syncNow.setOnClickListener(view -> {
-            if (selectedGroupId == null) {
+            AndroidGroup selected = selectedGroup();
+            if (selected == null) {
                 Toast.makeText(this, "请先添加同步组", Toast.LENGTH_SHORT).show();
+            } else if (!selected.enabled()) {
+                Toast.makeText(this, "该同步组已停用", Toast.LENGTH_SHORT).show();
             } else if (boundService != null && boundService.isReady()) {
-                boundService.requestSync(selectedGroupId);
+                boundService.requestSync(selected.id());
                 Toast.makeText(this, "已请求同步", Toast.LENGTH_SHORT).show();
             } else {
                 Toast.makeText(this, "请先保存并启动同步服务", Toast.LENGTH_SHORT).show();
@@ -362,8 +365,8 @@ public final class MainActivity extends Activity {
 
     private void startSync() {
         try {
-            if (!config.hasGroups()) {
-                Toast.makeText(this, "请先添加同步组", Toast.LENGTH_SHORT).show();
+            if (!config.hasEnabledGroups()) {
+                Toast.makeText(this, "请先启用至少一个同步组", Toast.LENGTH_SHORT).show();
                 return;
             }
             int port = Integer.parseInt(portField.getText().toString().trim());
@@ -454,6 +457,20 @@ public final class MainActivity extends Activity {
         content.addView(root);
         EditText name = field(content, "组名（只在本机显示）", group.name(), false);
         AlertDialog[] settingsDialog = new AlertDialog[1];
+        Button toggleEnabled = new Button(this);
+        toggleEnabled.setText(group.enabled() ? "停用此组" : "启用此组");
+        toggleEnabled.setOnClickListener(view -> {
+            try {
+                config.setGroupEnabled(group.id(), !group.enabled());
+                settingsDialog[0].dismiss();
+                showConfig();
+                restartServiceIfRunning();
+            } catch (Exception e) {
+                Toast.makeText(this, "切换失败: " + message(e),
+                        Toast.LENGTH_LONG).show();
+            }
+        });
+        content.addView(toggleEnabled);
         Button changeRoot = new Button(this);
         changeRoot.setText("更换同步根");
         changeRoot.setOnClickListener(view -> showChangeRootDialog(group, settingsDialog[0]));
@@ -632,11 +649,12 @@ public final class MainActivity extends Activity {
     }
 
     private void restartServiceAfterMaintenance() {
-        if (config.hasGroups()) {
+        if (config.hasEnabledGroups()) {
             requestNotificationPermission();
             startForegroundService(new Intent(this, SyncForegroundService.class));
         } else {
-            Toast.makeText(this, "已停止同步服务", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "没有启用的同步组，已停止同步服务",
+                    Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -668,9 +686,10 @@ public final class MainActivity extends Activity {
     }
 
     private static String groupText(AndroidGroup group) {
-        return group.name().equals(group.id().value())
+        String text = group.name().equals(group.id().value())
                 ? group.id().value()
                 : group.name() + " (" + group.id().value() + ")";
+        return group.enabled() ? text : text + "（已停用）";
     }
 
     private String groupLabel(GroupId groupId) {
@@ -683,8 +702,13 @@ public final class MainActivity extends Activity {
     }
 
     private void showDevices() {
-        if (selectedGroupId == null) {
+        AndroidGroup selected = selectedGroup();
+        if (selected == null) {
             Toast.makeText(this, "请先添加同步组", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!selected.enabled()) {
+            Toast.makeText(this, "该同步组已停用", Toast.LENGTH_SHORT).show();
             return;
         }
         if (boundService != null && boundService.isReady()) {
@@ -745,8 +769,13 @@ public final class MainActivity extends Activity {
     }
 
     private void showRules() {
-        if (selectedGroupId == null) {
+        AndroidGroup selected = selectedGroup();
+        if (selected == null) {
             Toast.makeText(this, "请先添加同步组", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        if (!selected.enabled()) {
+            Toast.makeText(this, "该同步组已停用", Toast.LENGTH_SHORT).show();
             return;
         }
         if (boundService != null && boundService.isReady()) {

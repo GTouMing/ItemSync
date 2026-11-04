@@ -416,8 +416,8 @@ public final class SyncForegroundService extends Service {
     private void startNode() {
         try {
             AndroidSyncConfig config = AndroidSyncConfig.of(this);
-            List<AndroidGroup> groups = config.groups();
-            if (groups.isEmpty()) {
+            List<AndroidGroup> allGroups = config.groups();
+            if (allGroups.isEmpty()) {
                 updateNotification("未配置同步组，请在 ItemSync 中添加");
                 return;
             }
@@ -432,9 +432,22 @@ public final class SyncForegroundService extends Service {
             NodeId nodeId = NodeId.of(readOrCreate("node-id"));
             DeviceId deviceId = DeviceId.of(readOrCreate("device-id"));
 
-            acquireMulticastLock();
             trustStore = new AndroidTrustStore(this);
             AndroidTrustStore trustStore = this.trustStore;
+            List<GroupId> allGroupIds = new ArrayList<>(allGroups.size());
+            for (AndroidGroup group : allGroups) {
+                allGroupIds.add(group.id());
+            }
+            // Disabled groups keep their trust for a later re-enable.
+            trustStore.retainOnly(allGroupIds);
+            List<AndroidGroup> groups = allGroups.stream()
+                    .filter(AndroidGroup::enabled)
+                    .toList();
+            if (groups.isEmpty()) {
+                updateNotification("没有启用的同步组，请在 ItemSync 中启用");
+                return;
+            }
+            acquireMulticastLock();
             List<GroupId> groupIds = new ArrayList<>(groups.size());
             List<SyncDevice.GroupConfig> groupConfigs = new ArrayList<>(groups.size());
             for (AndroidGroup group : groups) {
