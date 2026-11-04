@@ -7,6 +7,8 @@ import github.gtouming.itemsync.domain.identity.TriggerId;
 import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.Trigger;
 import github.gtouming.itemsync.domain.model.TriggerType;
+import github.gtouming.itemsync.platform.desktop.DesktopConfig;
+import github.gtouming.itemsync.platform.desktop.DesktopGroup;
 import github.gtouming.itemsync.platform.desktop.DesktopSecurity;
 import github.gtouming.itemsync.platform.desktop.NioDirectoryWatcher;
 import github.gtouming.itemsync.platform.desktop.PathSupport;
@@ -73,6 +75,10 @@ public final class ItemSyncCli {
             case "trigger-list" -> triggerList(arguments);
             case "trigger-remove" -> triggerRemove(arguments);
             case "run-list" -> runList(arguments);
+            case "group-list" -> groupList(arguments);
+            case "group-add" -> groupAdd(arguments);
+            case "group-remove" -> groupRemove(arguments);
+            case "group-rename" -> groupRename(arguments);
             case "config" -> CliAdmin.config(arguments);
             case "trust" -> CliAdmin.trust(arguments);
             case "status" -> CliAdmin.status(arguments);
@@ -317,6 +323,39 @@ public final class ItemSyncCli {
         }
     }
 
+    private static void groupList(CliArguments arguments) throws IOException {
+        Path data = dataDirectory(arguments);
+        for (DesktopGroup group : DesktopConfig.load(data).groups()) {
+            System.out.println(group.id() + "\t" + group.name() + "\t" + group.root());
+        }
+    }
+
+    private static void groupAdd(CliArguments arguments) throws IOException {
+        Path data = dataDirectory(arguments);
+        DesktopConfig config = DesktopConfig.load(data);
+        GroupId id = GroupId.parse(arguments.required("id"));
+        Path root = PathSupport.expandUser(arguments.required("root")).toAbsolutePath().normalize();
+        String name = arguments.optional("name", null);
+        DesktopConfig updated = config.addGroup(new DesktopGroup(id, name, root));
+        System.out.println("added: " + updated.findGroup(id).orElseThrow());
+    }
+
+    private static void groupRemove(CliArguments arguments) throws IOException {
+        Path data = dataDirectory(arguments);
+        DesktopConfig config = DesktopConfig.load(data);
+        GroupId id = GroupId.parse(arguments.required("id"));
+        config.removeGroup(id);
+        System.out.println("removed: " + id);
+    }
+
+    private static void groupRename(CliArguments arguments) throws IOException {
+        Path data = dataDirectory(arguments);
+        DesktopConfig config = DesktopConfig.load(data);
+        GroupId id = GroupId.parse(arguments.required("id"));
+        DesktopConfig updated = config.renameGroup(id, arguments.required("name"));
+        System.out.println("renamed: " + updated.findGroup(id).orElseThrow());
+    }
+
     private static void usage() {
         System.out.println("""
                 usage: itemsync-cli <command> [options]
@@ -336,10 +375,17 @@ public final class ItemSyncCli {
                   trigger-list  --data <dir> --group <id>
                   trigger-remove --data <dir> --id <trigger-id>
                   run-list      --data <dir> --group <id>
+                  group-list    --data <dir>
+                  group-add     --data <dir> --id <group> --root <path> [--name <name>]
+                  group-remove  --data <dir> --id <group>
+                  group-rename  --data <dir> --id <group> --name <name>
                   config        get|set ... [--platform desktop|android] [--data <dir>]
                                 [--serial <serial>] [--adb <path>] [--json] [--yes]
                   trust         list|add|remove|clear ... [--platform ...] [--data <dir>]
                   status        [--platform desktop|android] [--data <dir>] [--json]
+
+                Stop the desktop app before changing its group list. The CLI still accepts
+                --group/--root for serve and sync; the desktop app serves every configured group.
 
                 Android config/trust/status requires a debuggable debug APK.
 

@@ -25,6 +25,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 class TriggerEngineTest {
@@ -113,6 +115,20 @@ class TriggerEngineTest {
             Thread.sleep(150);
 
             assertEquals(1, runs.get());
+        }
+    }
+
+    @Test
+    void unregisterRemovesTheDirectoryRuleImmediately() throws Exception {
+        try (TriggerEngine engine = engine(
+                () -> List.of(new SyncRunResult(1, 0, 0, 0)), Duration.ZERO)) {
+            engine.register(directoryTrigger());
+            assertEquals(List.of(TRIGGER), engine.directoryTriggers());
+
+            engine.unregister(TRIGGER);
+
+            assertTrue(engine.directoryTriggers().isEmpty());
+            assertNull(engine.config(TRIGGER));
         }
     }
 

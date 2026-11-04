@@ -16,6 +16,7 @@ import github.gtouming.itemsync.sync.engine.SyncRunResult;
 import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -85,6 +86,7 @@ public final class TriggerEngine implements AutoCloseable {
     public void register(Trigger trigger) {
         Objects.requireNonNull(trigger, "trigger");
         if (!trigger.enabled()) {
+            unregister(trigger.id());
             return;
         }
         TriggerConfig config = TriggerConfigCodec.decode(trigger.configJson());
@@ -92,6 +94,34 @@ public final class TriggerEngine implements AutoCloseable {
         if (config instanceof TriggerConfig.Alarm alarm) {
             alarms.schedule(trigger.id(), alarm.schedule(), () -> execute(trigger.id()));
         }
+    }
+
+    /**
+     * Removes a rule from the running engine. An alarm or debounced condition that was
+     * already scheduled is cancelled; a newly added rule is picked up without a restart.
+     */
+    public void unregister(TriggerId id) {
+        Objects.requireNonNull(id, "id");
+        configs.remove(id);
+        alarms.cancel(id);
+        ScheduledFuture<?> future = pending.remove(id);
+        if (future != null) {
+            future.cancel(false);
+        }
+    }
+
+    /**
+     * The currently registered directory-condition rules. The single directory watcher of a
+     * group calls every id on each file event, so adding or removing a rule needs no restart.
+     */
+    public List<TriggerId> directoryTriggers() {
+        List<TriggerId> ids = new ArrayList<>();
+        configs.forEach((id, config) -> {
+            if (config instanceof TriggerConfig.DirectoryChange) {
+                ids.add(id);
+            }
+        });
+        return Compat.copyList(ids);
     }
 
     public TriggerConfig config(TriggerId id) {
@@ -125,7 +155,7 @@ public final class TriggerEngine implements AutoCloseable {
     }
 
     private void onCondition(TriggerId id) {
-        if (running.get() || clock.get().isBefore(suppressUntil)) {
+        if (!configs.containsKey(id) || running.get() || clock.get().isBefore(suppressUntil)) {
             return;
         }
         scheduleDebounced(id);

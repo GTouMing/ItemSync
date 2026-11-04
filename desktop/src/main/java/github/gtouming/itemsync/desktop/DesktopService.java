@@ -5,10 +5,15 @@ import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.ItemId;
 import github.gtouming.itemsync.domain.identity.NodeId;
+import github.gtouming.itemsync.domain.identity.TriggerId;
 import github.gtouming.itemsync.domain.identity.VersionId;
+import github.gtouming.itemsync.domain.model.Conflict;
 import github.gtouming.itemsync.domain.model.FileVersion;
+import github.gtouming.itemsync.domain.model.GroupDevice;
+import github.gtouming.itemsync.domain.model.Item;
 import github.gtouming.itemsync.domain.model.SyncRun;
 import github.gtouming.itemsync.domain.model.Trigger;
+import github.gtouming.itemsync.domain.model.TriggerType;
 import github.gtouming.itemsync.platform.desktop.DesktopConfig;
 import github.gtouming.itemsync.platform.desktop.DesktopGroup;
 import github.gtouming.itemsync.platform.desktop.NioDirectoryWatcher;
@@ -38,6 +43,8 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -66,18 +73,20 @@ public final class DesktopService implements AutoCloseable {
     private final NodeId nodeId;
     private final TlsIdentity identity;
     private final JdbcMetadataStore store;
+    private final TrustStore trustStore;
     private final SyncDevice device;
     private final List<GroupSession> sessions;
     private final Map<GroupId, GroupSession> sessionsByGroup;
     private final ReentrantLock storeLock;
 
     private DesktopService(DesktopConfig config, NodeId nodeId, TlsIdentity identity,
-                           JdbcMetadataStore store, SyncDevice device,
+                           JdbcMetadataStore store, TrustStore trustStore, SyncDevice device,
                            List<GroupSession> sessions, ReentrantLock storeLock) {
         this.config = config;
         this.nodeId = nodeId;
         this.identity = identity;
         this.store = store;
+        this.trustStore = trustStore;
         this.device = device;
         this.sessions = sessions;
         Map<GroupId, GroupSession> byGroup = new LinkedHashMap<>();
@@ -99,12 +108,13 @@ public final class DesktopService implements AutoCloseable {
         for (DesktopGroup group : groups) {
             Files.createDirectories(group.root());
         }
+        List<DesktopGroup> activeGroups = groups.stream()
+                .filter(DesktopGroup::enabled)
+                .toList();
 
         TrustStore trustStore = new TrustStore(config.dataDir());
-        if (!groups.isEmpty()) {
-            // A device that serves several groups keeps the trust of all of them.
-            trustStore.retainOnly(groups.stream().map(DesktopGroup::id).toList());
-        }
+        // A disabled group keeps its trust for a later re-enable; a deleted group does not.
+        trustStore.retainOnly(groups.stream().map(DesktopGroup::id).toList());
 
         JdbcMetadataStore store = openStore(config.dataDir());
         BlobStore blobs = new FileSystemBlobStore(config.dataDir());
@@ -113,11 +123,11 @@ public final class DesktopService implements AutoCloseable {
         SyncDevice device = null;
         List<GroupSession> sessions = new ArrayList<>();
         try {
-            if (!groups.isEmpty()) {
-                device = openDevice(nodeId, deviceId, identity, store, blobs, physical, groups,
-                        trustStore, config);
+            if (!activeGroups.isEmpty()) {
+                device = openDevice(nodeId, deviceId, identity, store, blobs, physical,
+                        activeGroups, trustStore, config);
             }
-            for (DesktopGroup group : groups) {
+            for (DesktopGroup group : activeGroups) {
                 GroupRuntime runtime = device == null ? null : device.group(group.id());
                 if (runtime == null) {
                     throw new IllegalStateException(
@@ -136,7 +146,7 @@ public final class DesktopService implements AutoCloseable {
             store.close();
             throw e;
         }
-        return new DesktopService(config, nodeId, identity, store, device,
+        return new DesktopService(config, nodeId, identity, store, trustStore, device,
                 List.copyOf(sessions), storeLock);
     }
 
@@ -174,15 +184,19 @@ public final class DesktopService implements AutoCloseable {
         try {
             List<Trigger> triggers = store.triggers().findByGroup(group.id());
             engine.registerAll(triggers);
+            // One directory watcher per group; it asks the engine for the current directory
+            // rules on every event so adding or removing one is live.
+            watchers.add(new NioDirectoryWatcher(group.root(), path -> {
+                for (TriggerId triggerId : engine.directoryTriggers()) {
+                    engine.onDirectoryChanged(triggerId);
+                }
+            }));
             for (Trigger trigger : triggers) {
                 if (!trigger.enabled()) {
                     continue;
                 }
                 TriggerConfig triggerConfig = TriggerConfigCodec.decode(trigger.configJson());
-                if (triggerConfig instanceof TriggerConfig.DirectoryChange) {
-                    watchers.add(new NioDirectoryWatcher(group.root(),
-                            path -> engine.onDirectoryChanged(trigger.id())));
-                } else if (triggerConfig instanceof TriggerConfig.ProcessEvent process) {
+                if (triggerConfig instanceof TriggerConfig.ProcessEvent process) {
                     Consumer<String> callback = executable -> engine.onProcessEvent(trigger.id());
                     watchers.add(new ProcessWatcher(process.executables(), callback, callback,
                             Duration.ofSeconds(2)));
@@ -210,6 +224,14 @@ public final class DesktopService implements AutoCloseable {
      */
     public Map<GroupId, GroupRuntime> groupRuntimes() {
         return device == null ? Map.of() : device.groups();
+    }
+
+    /**
+     * Registers a listener that fires when a peer appears or disappears in one group. The
+     * listener runs on the discovery thread; callers must post to their UI thread.
+     */
+    public AutoCloseable addPresenceListener(GroupId groupId, Runnable listener) {
+        return requireSession(groupId).runtime().presenceTracker().addListener(listener);
     }
 
     /**
@@ -247,20 +269,22 @@ public final class DesktopService implements AutoCloseable {
 
     public List<PeerTrustCoordinator.PeerView> peerViews() {
         GroupSession session = firstSessionOrNull();
-        return session == null ? List.of() : session.peerTrust().peerViews();
+        return session == null ? List.of() : peerViews(session.group().id(), true);
     }
 
     public List<PeerTrustCoordinator.PeerView> peerViews(boolean forceRefresh) {
         GroupSession session = firstSessionOrNull();
-        return session == null ? List.of() : session.peerTrust().peerViews(forceRefresh);
+        return session == null ? List.of() : peerViews(session.group().id(), forceRefresh);
     }
 
     public List<PeerTrustCoordinator.PeerView> peerViews(GroupId groupId) {
-        return requireSession(groupId).peerTrust().peerViews();
+        return peerViews(groupId, true);
     }
 
     public List<PeerTrustCoordinator.PeerView> peerViews(GroupId groupId, boolean forceRefresh) {
-        return requireSession(groupId).peerTrust().peerViews(forceRefresh);
+        GroupSession session = requireSession(groupId);
+        List<PeerTrustCoordinator.PeerView> online = session.peerTrust().peerViews(forceRefresh);
+        return mergeKnownDevices(session, online);
     }
 
     public boolean isTrusted(DiscoveredPeer peer) {
@@ -300,11 +324,83 @@ public final class DesktopService implements AutoCloseable {
     public void reconcileTrustedPeers() {
         for (GroupSession session : sessions) {
             session.peerTrust().reconcileTrustedPeers();
+            rememberOnlineDevices(session.group().id(),
+                    session.peerTrust().onlinePeers());
         }
     }
 
     public void reconcileTrustedPeers(GroupId groupId) {
-        requireSession(groupId).peerTrust().reconcileTrustedPeers();
+        GroupSession session = requireSession(groupId);
+        session.peerTrust().reconcileTrustedPeers();
+        rememberOnlineDevices(groupId, session.peerTrust().onlinePeers());
+    }
+
+    private List<PeerTrustCoordinator.PeerView> mergeKnownDevices(
+            GroupSession session, List<PeerTrustCoordinator.PeerView> online) {
+        GroupId groupId = session.group().id();
+        storeLock.lock();
+        try {
+            Set<DeviceId> onlineIds = new HashSet<>();
+            for (PeerTrustCoordinator.PeerView view : online) {
+                DiscoveredPeer peer = view.presence().peer();
+                onlineIds.add(peer.deviceId());
+                rememberDeviceIfChangedLocked(groupId, peer, view.presence().lastSeen());
+            }
+            List<PeerTrustCoordinator.PeerView> merged = new ArrayList<>(online);
+            for (GroupDevice device : store.devices().findByGroup(groupId)) {
+                if (onlineIds.contains(device.deviceId())) {
+                    continue;
+                }
+                boolean trusted = trustStore.isTrusted(groupId, device.certFingerprint());
+                Instant lastSeen = device.lastSeenAt() == null
+                        ? device.knownAt()
+                        : device.lastSeenAt();
+                merged.add(PeerTrustCoordinator.PeerView.offline(groupId, device.deviceId(),
+                        device.certFingerprint(), lastSeen, trusted));
+            }
+            merged.sort(Comparator.comparing(
+                    view -> view.presence().peer().deviceId().value()));
+            return List.copyOf(merged);
+        } finally {
+            storeLock.unlock();
+        }
+    }
+
+    private void rememberOnlineDevices(GroupId groupId,
+                                       List<PresenceTracker.Presence> presences) {
+        storeLock.lock();
+        try {
+            for (PresenceTracker.Presence presence : presences) {
+                rememberDeviceLocked(groupId, presence.peer(), presence.lastSeen());
+            }
+        } finally {
+            storeLock.unlock();
+        }
+    }
+
+    private void rememberDeviceLocked(GroupId groupId, DiscoveredPeer peer, Instant lastSeen) {
+        GroupDevice existing = store.devices().find(groupId, peer.deviceId()).orElse(null);
+        Instant seen = lastSeen == null ? Instant.EPOCH : lastSeen;
+        Instant knownAt = existing == null || existing.knownAt() == null
+                ? seen
+                : existing.knownAt();
+        store.devices().upsert(new GroupDevice(groupId, peer.deviceId(),
+                existing == null ? null : existing.displayName(), peer.fingerprint(),
+                seen, knownAt));
+    }
+
+    /**
+     * The peer view refresh happens every few seconds; only a new device or a rotated
+     * certificate needs a write, the ten-second reconcile updates last-seen.
+     */
+    private void rememberDeviceIfChangedLocked(GroupId groupId, DiscoveredPeer peer,
+                                               Instant lastSeen) {
+        GroupDevice existing = store.devices().find(groupId, peer.deviceId()).orElse(null);
+        if (existing != null
+                && existing.certFingerprint().equalsIgnoreCase(peer.fingerprint())) {
+            return;
+        }
+        rememberDeviceLocked(groupId, peer, lastSeen);
     }
 
     public void refreshRemoteTrust() {
@@ -317,66 +413,126 @@ public final class DesktopService implements AutoCloseable {
         requireSession(groupId).peerTrust().refreshRemoteTrust();
     }
 
+    /**
+     * The stored sync rules of one group. They are read from the store on every call so the
+     * rules dialog sees a rule added by the CLI or by an earlier window.
+     */
+    public List<Trigger> triggers(GroupId groupId) {
+        requireSession(groupId);
+        return storeGuardedUnchecked(storeLock,
+                () -> store.triggers().findByGroup(groupId));
+    }
+
+    /**
+     * Adds an enabled rule and registers it with the running engine immediately.
+     */
+    public Trigger addTrigger(GroupId groupId, TriggerConfig config) throws IOException {
+        Objects.requireNonNull(config, "config");
+        GroupSession session = requireSession(groupId);
+        TriggerId id = new TriggerId(UUID.randomUUID().toString());
+        TriggerType type = config instanceof TriggerConfig.Alarm
+                ? TriggerType.ALARM
+                : TriggerType.CONDITION;
+        Instant nextFire = config instanceof TriggerConfig.Alarm alarm
+                ? alarm.schedule().nextFire(Instant.now())
+                : null;
+        Trigger trigger = new Trigger(id, groupId, type, TriggerConfigCodec.encode(config),
+                true, nextFire);
+        storeGuarded(storeLock, () -> {
+            store.triggers().upsert(trigger);
+            return null;
+        });
+        session.triggers().register(trigger);
+        return trigger;
+    }
+
+    public void deleteTrigger(GroupId groupId, TriggerId id) throws IOException {
+        Objects.requireNonNull(id, "id");
+        GroupSession session = requireSession(groupId);
+        storeGuarded(storeLock, () -> {
+            Trigger trigger = store.triggers().find(id)
+                    .orElseThrow(() -> new IOException("trigger not found: " + id.value()));
+            if (!trigger.groupId().equals(groupId)) {
+                throw new IOException("trigger does not belong to this group: " + id.value());
+            }
+            store.triggers().delete(id);
+            return null;
+        });
+        session.triggers().unregister(id);
+    }
+
+    public Trigger setTriggerEnabled(GroupId groupId, TriggerId id, boolean enabled)
+            throws IOException {
+        Objects.requireNonNull(id, "id");
+        GroupSession session = requireSession(groupId);
+        Trigger updated = storeGuarded(storeLock, () -> {
+            Trigger trigger = store.triggers().find(id)
+                    .orElseThrow(() -> new IOException("trigger not found: " + id.value()));
+            if (!trigger.groupId().equals(groupId)) {
+                throw new IOException("trigger does not belong to this group: " + id.value());
+            }
+            Instant nextFire = null;
+            if (enabled && TriggerConfigCodec.decode(trigger.configJson())
+                    instanceof TriggerConfig.Alarm alarm) {
+                nextFire = alarm.schedule().nextFire(Instant.now());
+            }
+            Trigger changed = new Trigger(trigger.id(), trigger.groupId(), trigger.type(),
+                    trigger.configJson(), enabled, nextFire);
+            store.triggers().upsert(changed);
+            return changed;
+        });
+        if (enabled) {
+            session.triggers().register(updated);
+        } else {
+            session.triggers().unregister(id);
+        }
+        return updated;
+    }
+
     public List<ConflictResolver.ConflictView> openConflicts() {
         GroupSession session = firstSessionOrNull();
-        if (session == null) {
-            return List.of();
-        }
-        return storeGuardedUnchecked(storeLock,
-                () -> session.runtime().readSerialized(() -> session.conflicts().open(200)));
+        return session == null ? List.of() : openConflicts(session);
+    }
+
+    public List<ConflictResolver.ConflictView> openConflicts(GroupId groupId) {
+        return openConflicts(requireSession(groupId));
     }
 
     public void resolveConflict(ConflictId id, ConflictResolver.Resolution resolution)
             throws IOException {
-        GroupSession session = requireFirstSession();
-        try {
-            storeGuarded(storeLock, () -> session.runtime().readSerialized(() -> {
-                try {
-                    session.conflicts().resolve(id, resolution);
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-                return null;
-            }));
-        } catch (UncheckedIOException e) {
-            throw e.getCause();
-        }
-        session.runtime().refreshManifest();
+        resolveConflict(requireFirstSession(), id, resolution);
+    }
+
+    public void resolveConflict(GroupId groupId, ConflictId id,
+                                ConflictResolver.Resolution resolution) throws IOException {
+        resolveConflict(requireSession(groupId), id, resolution);
     }
 
     public List<VersionHistoryService.ItemView> historyItems() {
         GroupSession session = firstSessionOrNull();
-        if (session == null) {
-            return List.of();
-        }
-        return storeGuardedUnchecked(storeLock,
-                () -> session.runtime().readSerialized(() -> session.history().items(200)));
+        return session == null ? List.of() : historyItems(session);
+    }
+
+    public List<VersionHistoryService.ItemView> historyItems(GroupId groupId) {
+        return historyItems(requireSession(groupId));
     }
 
     public List<FileVersion> versions(ItemId itemId) {
         GroupSession session = firstSessionOrNull();
-        if (session == null) {
-            return List.of();
-        }
-        return storeGuardedUnchecked(storeLock,
-                () -> session.runtime().readSerialized(() -> session.history().versions(itemId)));
+        return session == null ? List.of() : versions(session, itemId);
+    }
+
+    public List<FileVersion> versions(GroupId groupId, ItemId itemId) {
+        return versions(requireSession(groupId), itemId);
     }
 
     public void restoreVersion(ItemId itemId, VersionId versionId) throws IOException {
-        GroupSession session = requireFirstSession();
-        try {
-            storeGuarded(storeLock, () -> session.runtime().readSerialized(() -> {
-                try {
-                    session.history().restore(itemId, versionId);
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-                return null;
-            }));
-        } catch (UncheckedIOException e) {
-            throw e.getCause();
-        }
-        session.runtime().refreshManifest();
+        restoreVersion(requireFirstSession(), itemId, versionId);
+    }
+
+    public void restoreVersion(GroupId groupId, ItemId itemId, VersionId versionId)
+            throws IOException {
+        restoreVersion(requireSession(groupId), itemId, versionId);
     }
 
     /**
@@ -384,20 +540,16 @@ public final class DesktopService implements AutoCloseable {
      * fingerprint, port and conflicts so the window can open on an empty installation.
      */
     public Status status() {
-        GroupSession session = firstSessionOrNull();
-        if (session == null) {
-            return new Status(null, nodeId, identity.fingerprint(), config.port(), null, null,
-                    store.conflicts().findOpen(1000).size(), deviceError(), null);
-        }
-        return storeGuardedUnchecked(storeLock, () -> session.runtime().readSerialized(() -> {
-            SyncRun lastRun = store.runs().recent(session.group().id(), 1).stream()
-                    .findFirst()
-                    .orElse(null);
-            int conflicts = store.conflicts().findOpen(1000).size();
-            return new Status(session.group().id(), nodeId, identity.fingerprint(), port(),
-                    session.group().root(), lastRun, conflicts, lastError(session),
-                    session.peerTrust().lastWarning());
-        }));
+        return status(firstSessionOrNull());
+    }
+
+    /**
+     * The status of one configured group.
+     *
+     * @throws IllegalArgumentException when this installation does not serve {@code groupId}
+     */
+    public Status status(GroupId groupId) {
+        return status(requireSession(groupId));
     }
 
     /**
@@ -426,6 +578,90 @@ public final class DesktopService implements AutoCloseable {
     public record Status(GroupId groupId, NodeId nodeId, String fingerprint, int port, Path root,
                          SyncRun lastRun, int openConflicts, IOException lastError,
                          String trustWarning) {
+    }
+
+    private Status status(GroupSession session) {
+        if (session == null) {
+            return new Status(null, nodeId, identity.fingerprint(), config.port(), null, null,
+                    openConflictCount(null), deviceError(), null);
+        }
+        GroupId groupId = session.group().id();
+        return storeGuardedUnchecked(storeLock, () -> session.runtime().readSerialized(() -> {
+            SyncRun lastRun = store.runs().recent(groupId, 1).stream()
+                    .findFirst()
+                    .orElse(null);
+            return new Status(groupId, nodeId, identity.fingerprint(), port(),
+                    session.group().root(), lastRun, openConflictCount(groupId),
+                    lastError(session), session.peerTrust().lastWarning());
+        }));
+    }
+
+    /**
+     * Counts the unresolved conflicts of one group. Conflicts are stored per item, so the
+     * item decides the group; a null group counts whatever the shared store still holds.
+     */
+    private int openConflictCount(GroupId groupId) {
+        int count = 0;
+        for (Conflict conflict : store.conflicts().findOpen(1000)) {
+            if (groupId == null) {
+                count++;
+                continue;
+            }
+            Item item = store.items().findById(conflict.itemId()).orElse(null);
+            if (item != null && item.groupId().equals(groupId)) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private List<ConflictResolver.ConflictView> openConflicts(GroupSession session) {
+        return storeGuardedUnchecked(storeLock,
+                () -> session.runtime().readSerialized(() -> session.conflicts().open(200)));
+    }
+
+    private void resolveConflict(GroupSession session, ConflictId id,
+                                 ConflictResolver.Resolution resolution) throws IOException {
+        try {
+            storeGuarded(storeLock, () -> session.runtime().readSerialized(() -> {
+                try {
+                    session.conflicts().resolve(id, resolution);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                return null;
+            }));
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
+        }
+        session.runtime().refreshManifest();
+    }
+
+    private List<VersionHistoryService.ItemView> historyItems(GroupSession session) {
+        return storeGuardedUnchecked(storeLock,
+                () -> session.runtime().readSerialized(() -> session.history().items(200)));
+    }
+
+    private List<FileVersion> versions(GroupSession session, ItemId itemId) {
+        return storeGuardedUnchecked(storeLock,
+                () -> session.runtime().readSerialized(() -> session.history().versions(itemId)));
+    }
+
+    private void restoreVersion(GroupSession session, ItemId itemId, VersionId versionId)
+            throws IOException {
+        try {
+            storeGuarded(storeLock, () -> session.runtime().readSerialized(() -> {
+                try {
+                    session.history().restore(itemId, versionId);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+                return null;
+            }));
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
+        }
+        session.runtime().refreshManifest();
     }
 
     private List<SyncRunResult> syncNow(GroupSession session) throws IOException {

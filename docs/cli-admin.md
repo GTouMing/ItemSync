@@ -38,6 +38,20 @@ Android：
 
 `group` 和 `root` 变更需要 `--yes`；`group` 变更会清除旧组信任。`trust clear` 也需要 `--yes`。
 
+## 多组配置
+
+桌面端的组列表保存在 `desktop-groups.properties`。修改前先退出 ItemSync，避免运行中的进程覆盖配置。
+
+```powershell
+itemsync-cli group-list   --data "$env:LOCALAPPDATA\ItemSync"
+itemsync-cli group-add    --data "$env:LOCALAPPDATA\ItemSync" --id <8位组ID> `
+                          --root D:\ItemSync\work --name 工作
+itemsync-cli group-rename --data "$env:LOCALAPPDATA\ItemSync" --id <8位组ID> --name 新名称
+itemsync-cli group-remove --data "$env:LOCALAPPDATA\ItemSync" --id <8位组ID>
+```
+
+`group-remove` 只修改配置，不删除同步根中的文件；该组的信任记录会在下次启动时按剩余组清理。`serve`/`sync` 仍可用 `--group`/`--root` 操作单个组。
+
 ## 示例
 
 ```powershell

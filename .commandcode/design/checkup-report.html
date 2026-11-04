@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>ItemSync - Checkup Report</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<style>
+		body { font-family: Inter, ui-sans-serif, system-ui, "Microsoft YaHei UI", sans-serif; }
+		.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+		.report-section { border: 1px solid #222226; background: #0a0a0b; position: relative; }
+		.corner-box { position: absolute; width: 20px; height: 20px; border: 1px solid #222226; background: #000; }
+	</style>
+</head>
+<body class="bg-black text-[#fafafa]">
+	<main class="mx-auto w-full max-w-6xl px-5 py-8 md:px-10 md:py-12">
+
+		<header class="report-section mb-8 p-6 md:p-8">
+			<div class="corner-box left-0 top-0 -translate-x-1/2 -translate-y-1/2"></div>
+			<div class="corner-box right-0 top-0 translate-x-1/2 -translate-y-1/2"></div>
+			<div class="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+				<div>
+					<div class="mono mb-2 text-xs tracking-widest text-[#666]">// CHECKUP / PRODUCT</div>
+					<h1 class="text-4xl font-bold tracking-tight md:text-6xl">ItemSync</h1>
+					<p class="mt-3 max-w-2xl text-sm leading-6 text-[#a0a0a0]">
+						Windows JavaFX 桌面端：主窗口、首次设置、密码、冲突、版本历史、局域网设备、同步规则、组设置。
+						仅诊断，未修改任何文件。
+					</p>
+				</div>
+				<div class="mono text-left text-xs text-[#666] md:text-right">
+					<div>COMMANDCODE REPORT</div>
+					<div class="text-[#444]">2026-11-04</div>
+					<div class="mt-2 text-[#444]">EVIDENCE: SOURCE INSPECTION</div>
+				</div>
+			</div>
+		</header>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="corner-box left-0 top-0 -translate-x-1/2 -translate-y-1/2"></div>
+			<div class="corner-box right-0 top-0 translate-x-1/2 -translate-y-1/2"></div>
+			<div class="grid gap-8 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+				<div>
+					<div class="mono mb-2 text-xs tracking-widest text-[#666]">// OVERALL</div>
+					<div class="text-6xl font-bold tracking-tight md:text-7xl">20</div>
+					<div class="mt-1 text-lg text-[#666]">/ 60</div>
+					<div class="mt-4 inline-flex border border-[#f43f5e]/30 bg-[#f43f5e]/10 px-3 py-1 text-sm text-[#f43f5e]">BLOCK · 阻塞</div>
+				</div>
+				<div>
+					<div class="mono mb-3 text-xs tracking-widest text-[#666]">// TL;DR</div>
+					<p class="text-sm leading-6 text-[#a0a0a0]">
+						核心同步任务可用，但界面是默认 Modena 控件直接堆叠：没有主次层级、没有进行中状态，
+						状态区把原始枚举和 JSON 直接展示给用户。更严重的是表单控件没有可访问名称，
+						冲突对话框把破坏性操作设为回车默认项，固定宽度的弹窗在 Windows 高缩放下会超出可用区域。
+					</p>
+					<p class="mt-4 text-sm leading-6 text-[#fbbf24]">
+						先修可访问名称与破坏性默认按钮，再处理缩放和状态表达。顺序：/design a11y → interaction → responsive → relayout。
+					</p>
+				</div>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// HEURISTIC SCORES</div>
+			<div class="overflow-x-auto">
+				<table class="w-full min-w-[720px] border-collapse text-sm">
+					<thead>
+						<tr class="border-b border-[#222226] text-left mono text-xs text-[#666]">
+							<th class="py-3 pr-4 font-normal">#</th>
+							<th class="py-3 pr-4 font-normal">VITAL</th>
+							<th class="py-3 pr-4 font-normal">STATUS</th>
+							<th class="py-3 pr-4 font-normal">SCORE</th>
+							<th class="py-3 font-normal">KEY FINDING</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">1</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Intentionality</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">WATCH</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">5/10</td>
+							<td class="py-4 text-[#a0a0a0]">默认 Modena 外观；11 个按钮同权重；无标题层级；状态区混入原始枚举/JSON</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">2</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Readability</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">WATCH</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">5/10</td>
+							<td class="py-4 text-[#a0a0a0]">默认 12–13px 字号；所有信息行同权重；最近运行直接输出 COMPLETED + JSON</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">3</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Usability</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">WATCH</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">5/10</td>
+							<td class="py-4 text-[#a0a0a0]">主任务可完成；但无同步进度、无取消；禁用按钮不说明原因；破坏性操作是回车默认</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">4</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Responsiveness</td>
+							<td class="py-4 pr-4 text-[#f43f5e]">CRITICAL</td>
+							<td class="py-4 pr-4 text-[#f43f5e]">0/10</td>
+							<td class="py-4 text-[#a0a0a0]">主窗口固定 940×560；9 个弹窗中 7 个不可缩放且无 ScrollPane，宽度固定到 840</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">5</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Speed</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">WATCH</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">5/10</td>
+							<td class="py-4 text-[#a0a0a0]">启动在 FX 线程同步完成配置/TLS/DB/端口绑定后才显示窗口；未测量耗时</td>
+						</tr>
+						<tr>
+							<td class="py-4 pr-4 text-[#555]">6</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Accessibility</td>
+							<td class="py-4 pr-4 text-[#f43f5e]">CRITICAL</td>
+							<td class="py-4 pr-4 text-[#f43f5e]">0/10</td>
+							<td class="py-4 text-[#a0a0a0]">表单控件无 labelFor / 可访问名称；键盘能到达但读屏无法得知字段含义</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// COGNITIVE LOAD / RISK</div>
+			<div class="grid gap-6 md:grid-cols-2">
+				<div>
+					<div class="mb-3 text-xl font-semibold">High — 键盘与读屏路径断裂，危险动作缺少摩擦</div>
+					<ul class="space-y-3 text-sm text-[#a0a0a0]">
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>同步、历史、设备刷新在后台线程执行，不阻塞 UI</li>
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>删除组、清除数据说明了后果，清除要求输入确认词</li>
+						<li><span class="mono mr-2 text-[#fbbf24]">WATCH</span>长任务没有进度与取消，界面看起来像卡住</li>
+						<li><span class="mono mr-2 text-[#f43f5e]">FAIL</span>输入框没有可访问名称，首次设置与解锁对读屏用户不可用</li>
+						<li><span class="mono mr-2 text-[#f43f5e]">FAIL</span>“接受远端”是回车默认，误触即覆盖本地文件</li>
+					</ul>
+				</div>
+				<div>
+					<div class="mono mb-3 text-xs tracking-widest text-[#666]">// NEXT MODES</div>
+					<div class="flex flex-wrap gap-2">
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design a11y</span>
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design interaction</span>
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design responsive</span>
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design relayout</span>
+					</div>
+				</div>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// WHAT'S WORKING</div>
+			<div class="grid gap-4 md:grid-cols-3">
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">诚实的破坏性文案</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">删除组、更换同步根、清除本机数据都写明后果与不可逆性；清除数据要求输入“清除”。</p>
+				</article>
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">空状态有下一步</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">未配置同步组时直接提示点击“添加同步组”，不是只显示一块空白区域。</p>
+				</article>
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">重活不占 UI 线程</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">同步、版本历史、设备列表都在 worker 中执行，再回到 FX 线程更新控件。</p>
+				</article>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// PRIORITY ISSUES (HIGH)</div>
+			<div class="space-y-5">
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#f43f5e]">HIGH · ACCESSIBILITY</div>
+					<h2 class="mb-2 text-lg font-semibold">表单控件没有可访问名称</h2>
+					<p class="mb-3 text-sm leading-6 text-[#a0a0a0]">
+						仓库中不存在 <span class="mono text-[#fafafa]">setLabelFor</span>、<span class="mono text-[#fafafa]">setAccessibleText</span> 或 <span class="mono text-[#fafafa]">setAccessibleRole</span>。
+						<span class="mono text-[#fafafa]">LocalPasswordDialog.java:25-26</span> 的两个密码框没有标签；
+						<span class="mono text-[#fafafa]">DesktopSetupDialog.java:59-75</span> 与 <span class="mono text-[#fafafa]">DesktopApp.java:1495-1499, 1635-1639</span> 的输入框只依赖相邻视觉标签。
+					</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">
+						FIX: 用 <span class="mono">/design a11y</span>；每个输入框配可见 Label 并 setLabelFor，同时设置可访问名称，确认密码单独命名为“确认密码”。
+					</div>
+				</article>
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#f43f5e]">HIGH · INTERACTION</div>
+					<h2 class="mb-2 text-lg font-semibold">“接受远端”是回车默认按钮</h2>
+					<p class="mb-3 text-sm leading-6 text-[#a0a0a0]">
+						<span class="mono text-[#fafafa]">DesktopApp.java:672-676</span> 将“接受远端”设为 <span class="mono text-[#fafafa]">ButtonData.OK_DONE</span>，
+						与“恢复本地/保留两者”同权重；普通冲突没有二次确认。按下回车就会覆盖本地文件。
+					</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">
+						FIX: 用 <span class="mono">/design interaction</span>；改为 ButtonData.OTHER，默认按钮留给“关闭”，执行前确认并给破坏性按钮危险样式。
+					</div>
+				</article>
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#f43f5e]">HIGH · RESPONSIVE</div>
+					<h2 class="mb-2 text-lg font-semibold">固定宽度弹窗在高缩放下越界</h2>
+					<p class="mb-3 text-sm leading-6 text-[#a0a0a0]">
+						主窗口固定 940×560（<span class="mono text-[#fafafa]">DesktopApp.java:317</span>）；弹窗 prefWidth 达 840，多数不可缩放且没有 ScrollPane
+						（<span class="mono text-[#fafafa]">DesktopApp.java:825, 965, 1212, 1541</span>）。1366×768 @150% 下逻辑视口约 911×512，底部按钮可能不可达。
+					</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">
+						FIX: 用 <span class="mono">/design responsive</span>；弹窗内容放入 ScrollPane，窗口可缩放并设置最小尺寸，按钮区固定在底部。
+					</div>
+				</article>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// FINDINGS</div>
+			<div class="overflow-x-auto">
+				<table class="w-full min-w-[1100px] border-collapse text-sm">
+					<thead>
+						<tr class="border-b border-[#222226] text-left mono text-xs text-[#666]">
+							<th class="py-3 pr-4 font-normal">#</th>
+							<th class="py-3 pr-4 font-normal">SEVERITY</th>
+							<th class="py-3 pr-4 font-normal">DISCIPLINE</th>
+							<th class="py-3 pr-4 font-normal">LOCATION</th>
+							<th class="py-3 pr-4 font-normal">BEFORE</th>
+							<th class="py-3 pr-4 font-normal">AFTER</th>
+							<th class="py-3 font-normal">WHY</th>
+						</tr>
+					</thead>
+					<tbody class="align-top">
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">1</td>
+							<td class="py-4 pr-4 mono text-[#f43f5e]">HIGH</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Accessibility</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">LocalPasswordDialog.java:25-26<br>DesktopSetupDialog.java:59-75<br>DesktopApp.java:1495-1499, 1635-1639</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">输入框只有视觉相邻标签，无 labelFor / 可访问名称</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">每个输入框配可见 Label 并 setLabelFor，补 setAccessibleText</td>
+							<td class="py-4 text-[#a0a0a0]">读屏只能听到“文本字段”，首次设置与解锁无法完成</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">2</td>
+							<td class="py-4 pr-4 mono text-[#f43f5e]">HIGH</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Interaction</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:672-676, 696-699</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">“接受远端”为 OK_DONE 默认按钮，与安全操作同权重</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">改为 OTHER，默认留给“关闭”，执行前确认并加危险样式</td>
+							<td class="py-4 text-[#a0a0a0]">回车即覆盖本地文件，不可逆且无区分</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">3</td>
+							<td class="py-4 pr-4 mono text-[#f43f5e]">HIGH</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Responsive</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:317, 825, 965, 1212, 1541<br>DesktopSetupDialog.java:80</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">固定 940×560 与 840 宽弹窗，多数不可缩放，无 ScrollPane</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">可缩放窗口 + ScrollPane + 最小尺寸 + 固定底部按钮区</td>
+							<td class="py-4 text-[#a0a0a0]">1366×768 @150% 下逻辑视口约 911×512，内容越界</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">4</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">MEDIUM</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Intentionality</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:545</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">state() + statsJson() 直接进界面</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">映射为中文摘要，例如“已完成 · 扫描 1,204 项 · 上传 3 项”</td>
+							<td class="py-4 text-[#a0a0a0]">原始枚举和 JSON 是日志格式，不是产品文案</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">5</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">MEDIUM</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Interaction</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:463-478, 481-498</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">同步时只置灰按钮，标签仍为“立即同步”</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">ProgressIndicator + “同步中…” + 取消入口</td>
+							<td class="py-4 text-[#a0a0a0]">长任务没有反馈，用户无法判断是否卡死</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">6</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">MEDIUM</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Layout</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:309-314</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">11 个按钮分两排，样式完全一致</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">主按钮样式给“立即同步”；退出/删除与常用操作分离</td>
+							<td class="py-4 text-[#a0a0a0]">眯眼测试失败，分不清主操作和危险操作</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">7</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">MEDIUM</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Writing</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:721-724, 865-868, 1473-1475</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">确认框使用 ButtonType.OK / CANCEL</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">使用动词：“接受远端”“恢复此版本”“删除规则”</td>
+							<td class="py-4 text-[#a0a0a0]">OK 不说明将发生什么</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">8</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">MEDIUM</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Usability</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:402-414, 1884</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">禁用按钮不解释原因，只有开机自启有 tooltip</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">为每个禁用态提供 tooltip 或就近说明</td>
+							<td class="py-4 text-[#a0a0a0]">用户看到灰按钮却不知道如何解锁</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">9</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">MEDIUM</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Accessibility</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:305-307, 525-558</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">状态/错误通过 Label.setText 更新，无实时区域或焦点转移</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">错误出现时移动焦点或使用可访问通知</td>
+							<td class="py-4 text-[#a0a0a0]">读屏用户不会得知同步失败或信任警告</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">10</td>
+							<td class="py-4 pr-4 mono text-[#fbbf24]">MEDIUM</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Writing</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:1204, 526</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">按钮写“启用/停用”；主窗口出现英文 port</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">按当前状态显示单一动作；统一为“端口”</td>
+							<td class="py-4 text-[#a0a0a0]">一个按钮一个动词，中英混排增加理解成本</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">11</td>
+							<td class="py-4 pr-4 mono text-[#34d399]">LOW</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Layout</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:318, 637, 781, 916, 1174, 1347, 1491, 1632</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">所有窗口和弹窗标题都是“ItemSync”</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">标题带任务名，例如“冲突 — 工作”</td>
+							<td class="py-4 text-[#a0a0a0]">窗口切换器中无法区分多个任务</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">12</td>
+							<td class="py-4 pr-4 mono text-[#34d399]">LOW</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Layout</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:307</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">错误 Label 始终参与布局，空文本仍占一行</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">用 managed/visible 随内容切换</td>
+							<td class="py-4 text-[#a0a0a0]">主窗口常驻一段无意义空白</td>
+						</tr>
+						<tr>
+							<td class="py-4 pr-4 text-[#555]">13</td>
+							<td class="py-4 pr-4 mono text-[#34d399]">LOW</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Interaction</td>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:1927-1935, 1943-1961</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">托盘菜单只能由鼠标右键触发</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">提供键盘可达入口；主窗口已有等价操作，故非阻塞</td>
+							<td class="py-4 text-[#a0a0a0]">键盘用户无法走托盘路径，但功能未丢失</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// CONSIDERED BUT REJECTED</div>
+			<div class="overflow-x-auto">
+				<table class="w-full min-w-[720px] border-collapse text-sm">
+					<thead>
+						<tr class="border-b border-[#222226] text-left mono text-xs text-[#666]">
+							<th class="py-3 pr-4 font-normal">LOCATION</th>
+							<th class="py-3 pr-4 font-normal">CANDIDATE</th>
+							<th class="py-3 font-normal">REJECTED BECAUSE</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:278, 305-306</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">硬编码十六进制颜色</td>
+							<td class="py-4 text-[#a0a0a0]">估算对比度约 4.8–7.1:1，默认浅色背景上可读；为三个颜色建 token 收益有限</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">全局</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">没有自定义 JavaFX 样式表</td>
+							<td class="py-4 text-[#a0a0a0]">工具型小界面不需要艺术指导；真正的问题是层级与可访问性，已分别报告</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:180-181</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">每 2 秒轮询状态</td>
+							<td class="py-4 text-[#a0a0a0]">没有测量到卡顿或数据库压力，不能凭直觉要求改事件驱动</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:1919-1925</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">托盘图标是纯色方块</td>
+							<td class="py-4 text-[#a0a0a0]">16×16 系统托盘尺寸下，识别度优先于品牌表达</td>
+						</tr>
+						<tr>
+							<td class="py-4 pr-4 mono text-xs text-[#a0a0a0]">DesktopApp.java:264-276</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">用 ComboBox 选择同步组</td>
+							<td class="py-4 text-[#a0a0a0]">组上限 5 个，组合框是合适控件</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// VERIFICATION</div>
+			<div class="grid gap-6 md:grid-cols-2">
+				<div>
+					<div class="mono mb-3 text-xs tracking-widest text-[#34d399]">RAN</div>
+					<ul class="space-y-2 text-sm leading-6 text-[#a0a0a0]">
+						<li>搜索手写前端资源：97 个匹配全部位于 build/ 报告目录。</li>
+						<li>通读 DesktopApp.java（2,080 行）与三个对话框类。</li>
+						<li>grep JavaFX 可访问性/布局 API：无样式表、无 labelFor、无可访问名称、无 ScrollPane、无 ProgressIndicator、无最小尺寸；仅 2 处 setResizable(true)。</li>
+						<li>枚举弹窗 prefWidth 与 ButtonData，确认“接受远端”为 OK_DONE 默认按钮。</li>
+						<li>阅读 Android MainActivity 结构：使用 ScrollView，正文多处 12sp；未计分。</li>
+					</ul>
+				</div>
+				<div>
+					<div class="mono mb-3 text-xs tracking-widest text-[#f43f5e]">NOT VERIFIED</div>
+					<ul class="space-y-2 text-sm leading-6 text-[#a0a0a0]">
+						<li>未启动 JavaFX GUI，字体渲染、焦点环外观、原生主题对比度未实测。</li>
+						<li>150% / 200% 缩放下的实际越界未截图验证，判断来自固定宽度与无滚动容器的源码推算。</li>
+						<li>冷启动耗时、大文件同步的进度表现未测量。</li>
+						<li>Android 真机渲染与 TalkBack 行为未验证。</li>
+					</ul>
+					<p class="mt-4 text-xs leading-5 text-[#666]">证据基础为源码检查；渲染层结论未当作已验证事实。</p>
+				</div>
+			</div>
+		</section>
+
+		<footer class="mono py-8 text-center text-xs tracking-widest text-[#444]">
+			Generated with CommandCode - 2026-11-04
+		</footer>
+	</main>
+</body>
+</html>

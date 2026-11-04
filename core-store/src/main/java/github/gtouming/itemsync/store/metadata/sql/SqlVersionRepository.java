@@ -1,6 +1,7 @@
 package github.gtouming.itemsync.store.metadata.sql;
 
 import github.gtouming.itemsync.domain.identity.BlobHash;
+import github.gtouming.itemsync.domain.identity.GroupId;
 import github.gtouming.itemsync.domain.identity.ItemId;
 import github.gtouming.itemsync.domain.identity.NodeId;
 import github.gtouming.itemsync.domain.identity.SyncRunId;
@@ -51,6 +52,12 @@ final class SqlVersionRepository implements VersionRepository {
         return session.query("SELECT " + COLUMNS + " FROM version WHERE item_id = ? "
                         + "ORDER BY created_at DESC, id DESC LIMIT ?",
                 SqlVersionRepository::map, itemId.value(), limit);
+    }
+
+    @Override
+    public void deleteByGroup(GroupId groupId) {
+        session.update("DELETE FROM version WHERE item_id IN "
+                + "(SELECT id FROM item WHERE group_id = ?)", groupId.value());
     }
 
     @Override

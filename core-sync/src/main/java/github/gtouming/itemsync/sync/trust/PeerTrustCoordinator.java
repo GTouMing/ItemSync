@@ -1,7 +1,9 @@
 package github.gtouming.itemsync.sync.trust;
 
 import github.gtouming.itemsync.domain.compat.Compat;
+import github.gtouming.itemsync.domain.identity.DeviceId;
 import github.gtouming.itemsync.domain.identity.GroupId;
+import github.gtouming.itemsync.domain.identity.NodeId;
 import github.gtouming.itemsync.sync.engine.node.SyncNode;
 import github.gtouming.itemsync.transport.discovery.DiscoveredPeer;
 import github.gtouming.itemsync.transport.discovery.PresenceTracker;
@@ -327,5 +329,28 @@ public final class PeerTrustCoordinator implements AutoCloseable {
                            boolean locallyTrusted, RemoteTrust remoteTrust, boolean connected,
                            RemoteTrustFailure remoteTrustFailure,
                            String remoteTrustErrorDetail) {
+
+        private static final String OFFLINE_NODE_PREFIX = "offline:";
+
+        /**
+         * A device row restored from the persisted group device list. It has no live address
+         * and no remote trust information; the UI must show it as offline and must not allow
+         * granting trust. Revoking the local trust of an offline device is still possible.
+         */
+        public static PeerView offline(GroupId groupId, DeviceId deviceId, String fingerprint,
+                                       Instant lastSeen, boolean locallyTrusted) {
+            DiscoveredPeer peer = new DiscoveredPeer(
+                    NodeId.of(OFFLINE_NODE_PREFIX + deviceId.value()), deviceId,
+                    Set.of(groupId), 0, fingerprint, List.of(), 1, 0);
+            PresenceTracker.Presence presence =
+                    new PresenceTracker.Presence(peer, lastSeen == null ? Instant.EPOCH : lastSeen);
+            return new PeerView(groupId, presence, locallyTrusted, RemoteTrust.UNKNOWN, false,
+                    RemoteTrustFailure.NO_PAIRING_ENDPOINT, "离线");
+        }
+
+        public static boolean isOffline(PeerView view) {
+            return view != null
+                    && view.presence().peer().nodeId().value().startsWith(OFFLINE_NODE_PREFIX);
+        }
     }
 }

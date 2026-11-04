@@ -7,10 +7,14 @@ import java.util.Objects;
 
 /**
  * One persisted sync group of a desktop installation: the immutable group id, the local
- * group name (shown on this device only, never synced) and the single local sync root of
- * that group (ADR-0035).
+ * group name (shown on this device only, never synced), the single local sync root and
+ * whether the group is enabled (ADR-0035).
  */
-public record DesktopGroup(GroupId id, String name, Path root) {
+public record DesktopGroup(GroupId id, String name, Path root, boolean enabled) {
+
+    public DesktopGroup(GroupId id, String name, Path root) {
+        this(id, name, root, true);
+    }
 
     public DesktopGroup {
         Objects.requireNonNull(id, "id");

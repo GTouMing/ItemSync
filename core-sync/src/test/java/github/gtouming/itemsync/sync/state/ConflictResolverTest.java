@@ -164,6 +164,20 @@ class ConflictResolverTest {
         assertFalse(store.conflicts().findOpen(10).isEmpty());
     }
 
+    @Test
+    void ignoresTheConflictsOfAnotherGroup() throws Exception {
+        Conflict conflict = createConflict();
+        ConflictResolver otherGroup = new ConflictResolver(syncRoot, store, PathResolvers.posix(),
+                GroupId.parse("group002"), NODE_A, () -> T0.plusSeconds(5));
+
+        assertTrue(otherGroup.open(10).isEmpty(),
+                "a conflict of group001 must not be listed for group002");
+        assertThrows(IOException.class,
+                () -> otherGroup.resolve(conflict.id(), ConflictResolver.Resolution.KEEP_BOTH));
+        assertFalse(store.conflicts().findOpen(10).isEmpty(),
+                "the rejected resolve must leave the conflict untouched");
+    }
+
     private Conflict createConflict() throws Exception {
         byte[] base = bytes("base");
         applier.applyRemote(file(PATH, remote(hash(base), base), base.length, T0,

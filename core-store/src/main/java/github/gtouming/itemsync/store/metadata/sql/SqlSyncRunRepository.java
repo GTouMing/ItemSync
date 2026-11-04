@@ -68,6 +68,11 @@ final class SqlSyncRunRepository implements SyncRunRepository {
                 SqlSyncRunRepository::map, groupId.value(), limit);
     }
 
+    @Override
+    public void deleteByGroup(GroupId groupId) {
+        session.update("DELETE FROM sync_run WHERE group_id = ?", groupId.value());
+    }
+
     private static SyncRun map(RowCursor cursor) {
         String triggerId = cursor.getString("trigger_id");
         return new SyncRun(

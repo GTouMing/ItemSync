@@ -60,6 +60,11 @@ final class SqlTriggerRepository implements TriggerRepository {
         session.update("DELETE FROM trigger WHERE id = ?", id.value());
     }
 
+    @Override
+    public void deleteByGroup(GroupId groupId) {
+        session.update("DELETE FROM trigger WHERE group_id = ?", groupId.value());
+    }
+
     private static Trigger map(RowCursor cursor) {
         return new Trigger(
                 TriggerId.of(cursor.getString("id")),

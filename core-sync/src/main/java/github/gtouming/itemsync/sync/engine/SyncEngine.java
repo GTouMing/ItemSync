@@ -102,5 +102,9 @@ public final class SyncEngine {
         @Override
         public void updatePush(GroupId groupId, NodeId peerNodeId, long sequence) {
         }
+
+        @Override
+        public void deleteByGroup(GroupId groupId) {
+        }
     }
 }

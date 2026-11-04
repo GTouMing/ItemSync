@@ -168,8 +168,31 @@ public record DesktopConfig(Path dataDir, List<DesktopGroup> groups,
     }
 
     /**
-     * Renames a group. Root changes are not supported by this slice, so a group keeps the
-     * root it was created with.
+     * Replaces the sync root of one group. The caller must stop the group and reset its
+     * metadata first; only the persisted configuration is changed here.
+     */
+    public DesktopConfig changeRoot(GroupId id, Path root) throws IOException {
+        Objects.requireNonNull(id, "id");
+        Objects.requireNonNull(root, "root");
+        List<DesktopGroup> updated = new ArrayList<>(groups.size());
+        boolean found = false;
+        for (DesktopGroup existing : groups) {
+            if (existing.id().equals(id)) {
+                updated.add(new DesktopGroup(existing.id(), existing.name(), root,
+                        existing.enabled()));
+                found = true;
+            } else {
+                updated.add(existing);
+            }
+        }
+        if (!found) {
+            throw new IllegalArgumentException("unknown sync group: " + id.value());
+        }
+        return withGroups(updated);
+    }
+
+    /**
+     * Renames a group. Root changes use {@link #changeRoot} and are destructive.
      */
     public DesktopConfig renameGroup(GroupId id, String name) throws IOException {
         Objects.requireNonNull(id, "id");
@@ -177,7 +200,31 @@ public record DesktopConfig(Path dataDir, List<DesktopGroup> groups,
         boolean found = false;
         for (DesktopGroup existing : groups) {
             if (existing.id().equals(id)) {
-                updated.add(new DesktopGroup(existing.id(), name, existing.root()));
+                updated.add(new DesktopGroup(existing.id(), name, existing.root(),
+                        existing.enabled()));
+                found = true;
+            } else {
+                updated.add(existing);
+            }
+        }
+        if (!found) {
+            throw new IllegalArgumentException("unknown sync group: " + id.value());
+        }
+        return withGroups(updated);
+    }
+
+    /**
+     * Enables or disables one group. A disabled group keeps its root, trust, rules and
+     * device list but is not served until the running desktop is restarted.
+     */
+    public DesktopConfig setGroupEnabled(GroupId id, boolean enabled) throws IOException {
+        Objects.requireNonNull(id, "id");
+        List<DesktopGroup> updated = new ArrayList<>(groups.size());
+        boolean found = false;
+        for (DesktopGroup existing : groups) {
+            if (existing.id().equals(id)) {
+                updated.add(new DesktopGroup(existing.id(), existing.name(), existing.root(),
+                        enabled));
                 found = true;
             } else {
                 updated.add(existing);
@@ -246,6 +293,7 @@ public record DesktopConfig(Path dataDir, List<DesktopGroup> groups,
             properties.setProperty(prefix + "id", group.id().value());
             properties.setProperty(prefix + "name", group.name());
             properties.setProperty(prefix + "root", group.root().toString());
+            properties.setProperty(prefix + "enabled", Boolean.toString(group.enabled()));
         }
         writeAtomic(dataDir, GROUPS_FILE_NAME, properties, GROUPS_COMMENT);
     }
@@ -311,7 +359,9 @@ public record DesktopConfig(Path dataDir, List<DesktopGroup> groups,
             GroupId id = GroupId.parse(required(properties, prefix + "id"));
             String name = properties.getProperty(prefix + "name");
             Path root = normalizedRoot(dataDir, required(properties, prefix + "root"));
-            groups.add(new DesktopGroup(id, name, root));
+            boolean enabled = Boolean.parseBoolean(
+                    properties.getProperty(prefix + "enabled", "true"));
+            groups.add(new DesktopGroup(id, name, root, enabled));
         }
         return groups;
     }

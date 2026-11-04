@@ -1,0 +1,454 @@
+/*
+ * ItemSync desktop theme.
+ *
+ * Direction: signal desk. Warm paper, ink type, copper for selection and
+ * focus, hairline edges, no gradients, no decorative shadows.
+ */
+
+.root,
+.app-dialog {
+    -fx-paper: #F4F1EA;
+    -fx-surface: #FBFAF6;
+    -fx-ink: #171B1E;
+    -fx-muted: #5E666B;
+    -fx-hairline: #D9D3C7;
+    -fx-copper: #B45309;
+    -fx-copper-soft: #F0E3D3;
+    -fx-live: #0F766E;
+    -fx-warning: #B54708;
+    -fx-error: #B42318;
+    -fx-idle: #98A2A8;
+
+    -fx-base: #F4F1EA;
+    -fx-background: #F4F1EA;
+    -fx-control-inner-background: #FBFAF6;
+    -fx-accent: #B45309;
+    -fx-focus-color: #B45309;
+    -fx-faint-focus-color: rgba(180, 83, 9, 0.18);
+    -fx-text-background-color: #171B1E;
+
+    -fx-font-family: "Microsoft YaHei UI";
+    -fx-font-size: 13px;
+    -fx-background-color: -fx-paper;
+}
+
+.app-shell {
+    -fx-background-color: -fx-paper;
+}
+
+.app-bar {
+    -fx-padding: 14 20 12 20;
+    -fx-background-color: -fx-surface;
+    -fx-border-color: transparent transparent -fx-hairline transparent;
+    -fx-border-width: 0 0 1 0;
+}
+
+.brand-title {
+    -fx-font-size: 17px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -fx-ink;
+}
+
+.brand-subtitle {
+    -fx-font-size: 11px;
+    -fx-text-fill: -fx-muted;
+}
+
+.group-strip {
+    -fx-padding: 6 20 6 20;
+    -fx-background-color: -fx-surface;
+    -fx-border-color: transparent transparent -fx-hairline transparent;
+    -fx-border-width: 0 0 1 0;
+}
+
+.section-label {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -fx-muted;
+}
+
+.group-scroll,
+.group-scroll > .viewport {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-padding: 0;
+}
+
+.group-tabs {
+    -fx-padding: 0;
+}
+
+.group-tab {
+    -fx-background-color: transparent;
+    -fx-background-radius: 0;
+    -fx-border-color: transparent transparent transparent transparent;
+    -fx-border-width: 0 0 2 0;
+    -fx-border-radius: 0;
+    -fx-padding: 6 10;
+    -fx-font-size: 12px;
+    -fx-text-fill: -fx-muted;
+}
+
+.group-tab:hover {
+    -fx-background-color: #EDE7DB;
+    -fx-text-fill: -fx-ink;
+}
+
+.group-tab:selected {
+    -fx-background-color: transparent;
+    -fx-text-fill: -fx-ink;
+    -fx-font-weight: bold;
+    -fx-border-color: transparent transparent -fx-copper transparent;
+}
+
+.group-tab:focused {
+    -fx-border-color: -fx-copper;
+    -fx-border-width: 1;
+}
+
+.empty-note {
+    -fx-font-size: 12px;
+    -fx-text-fill: -fx-muted;
+    -fx-padding: 6 4;
+}
+
+.primary-button {
+    -fx-background-color: #1B2226;
+    -fx-background-radius: 3;
+    -fx-border-color: #1B2226;
+    -fx-border-radius: 3;
+    -fx-border-width: 1;
+    -fx-padding: 7 16;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #FBFAF6;
+}
+
+.primary-button:hover {
+    -fx-background-color: #2A343A;
+    -fx-border-color: #2A343A;
+}
+
+.primary-button:pressed {
+    -fx-background-color: #0F1416;
+    -fx-border-color: #0F1416;
+}
+
+.primary-button:disabled {
+    -fx-opacity: 0.45;
+}
+
+.secondary-button,
+.ghost-button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 3;
+    -fx-border-color: -fx-hairline;
+    -fx-border-radius: 3;
+    -fx-border-width: 1;
+    -fx-padding: 7 12;
+    -fx-font-size: 12px;
+    -fx-text-fill: -fx-ink;
+}
+
+.secondary-button:hover,
+.ghost-button:hover {
+    -fx-background-color: #EDE7DB;
+    -fx-border-color: #BFB7A8;
+}
+
+.secondary-button:disabled,
+.ghost-button:disabled {
+    -fx-opacity: 0.45;
+}
+
+.primary-button:focused,
+.secondary-button:focused,
+.ghost-button:focused {
+    -fx-border-color: -fx-copper;
+}
+
+.workspace {
+    -fx-padding: 20;
+    -fx-background-color: transparent;
+}
+
+.workspace-scroll,
+.workspace-scroll > .viewport {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-padding: 0;
+}
+
+.status-band {
+    -fx-background-color: -fx-surface;
+    -fx-background-radius: 3;
+    -fx-border-color: -fx-hairline -fx-hairline -fx-hairline -fx-copper;
+    -fx-border-width: 1 1 1 4;
+    -fx-border-radius: 3;
+    -fx-padding: 18 20 18 20;
+}
+
+.status-eyebrow {
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -fx-muted;
+}
+
+.status-headline {
+    -fx-font-size: 28px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -fx-ink;
+}
+
+.status-detail {
+    -fx-font-size: 13px;
+    -fx-text-fill: -fx-muted;
+}
+
+.status-dot {
+    -fx-min-width: 8;
+    -fx-min-height: 8;
+    -fx-pref-width: 8;
+    -fx-pref-height: 8;
+    -fx-max-width: 8;
+    -fx-max-height: 8;
+    -fx-background-radius: 8;
+    -fx-background-color: -fx-idle;
+}
+
+.state-idle {
+    -fx-background-color: -fx-idle;
+}
+
+.state-busy {
+    -fx-background-color: -fx-copper;
+}
+
+.state-ok {
+    -fx-background-color: -fx-live;
+}
+
+.state-error {
+    -fx-background-color: -fx-error;
+}
+
+.sync-progress {
+    -fx-progress-color: -fx-copper;
+}
+
+.status-badge {
+    -fx-padding: 3 8;
+    -fx-background-radius: 3;
+    -fx-border-radius: 3;
+    -fx-border-width: 1;
+    -fx-font-size: 11px;
+}
+
+.badge-neutral {
+    -fx-text-fill: -fx-muted;
+    -fx-border-color: -fx-hairline;
+    -fx-background-color: transparent;
+}
+
+.badge-warning {
+    -fx-text-fill: #8A4B08;
+    -fx-border-color: #E3C7A8;
+    -fx-background-color: #F7EBDD;
+}
+
+.error-text {
+    -fx-font-size: 12px;
+    -fx-text-fill: -fx-error;
+}
+
+.app-dialog .label.error-text {
+    -fx-text-fill: -fx-error;
+}
+
+.app-dialog .button.danger-text {
+    -fx-text-fill: -fx-error;
+}
+
+.section-title {
+    -fx-font-size: 11px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -fx-muted;
+}
+
+.data-grid {
+    -fx-padding: 0;
+}
+
+.data-key {
+    -fx-font-size: 11px;
+    -fx-text-fill: -fx-muted;
+}
+
+.data-value {
+    -fx-font-size: 12px;
+    -fx-text-fill: -fx-ink;
+}
+
+.mono {
+    -fx-font-family: "Consolas";
+    -fx-font-size: 12px;
+}
+
+.side-panel {
+    -fx-background-color: -fx-surface;
+    -fx-background-radius: 3;
+    -fx-border-color: -fx-hairline;
+    -fx-border-width: 1;
+    -fx-border-radius: 3;
+    -fx-padding: 16;
+}
+
+.side-action {
+    -fx-background-color: transparent;
+    -fx-background-radius: 3;
+    -fx-border-color: transparent;
+    -fx-border-radius: 3;
+    -fx-border-width: 1;
+    -fx-padding: 7 6;
+    -fx-font-size: 12px;
+    -fx-text-fill: -fx-ink;
+    -fx-alignment: CENTER-LEFT;
+}
+
+.side-action:hover {
+    -fx-background-color: #EDE7DB;
+}
+
+.side-action:focused {
+    -fx-border-color: -fx-copper;
+}
+
+.setting-check {
+    -fx-font-size: 12px;
+    -fx-text-fill: -fx-ink;
+}
+
+.footer-bar {
+    -fx-padding: 9 20 10 20;
+    -fx-background-color: -fx-surface;
+    -fx-border-color: -fx-hairline transparent transparent transparent;
+    -fx-border-width: 1 0 0 0;
+}
+
+.footer-note {
+    -fx-font-size: 10px;
+    -fx-text-fill: -fx-muted;
+}
+
+.tooltip {
+    -fx-background-color: #1B2226;
+    -fx-background-radius: 3;
+    -fx-text-fill: #FBFAF6;
+    -fx-font-size: 11px;
+    -fx-padding: 6 8;
+}
+
+/* Dialogs */
+
+.app-dialog {
+    -fx-background-color: -fx-paper;
+}
+
+.app-dialog .header-panel {
+    -fx-background-color: -fx-surface;
+    -fx-padding: 14 16;
+    -fx-border-color: transparent transparent -fx-hairline transparent;
+    -fx-border-width: 0 0 1 0;
+}
+
+.app-dialog .header-panel .label {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -fx-ink;
+}
+
+.app-dialog .label {
+    -fx-text-fill: -fx-ink;
+}
+
+.app-dialog .button-bar {
+    -fx-padding: 12 16 14 16;
+}
+
+.app-dialog .button {
+    -fx-background-color: transparent;
+    -fx-background-radius: 3;
+    -fx-border-color: -fx-hairline;
+    -fx-border-radius: 3;
+    -fx-border-width: 1;
+    -fx-padding: 6 12;
+    -fx-font-size: 12px;
+    -fx-text-fill: -fx-ink;
+}
+
+.app-dialog .button:hover {
+    -fx-background-color: #EDE7DB;
+}
+
+.app-dialog .button:default {
+    -fx-background-color: #1B2226;
+    -fx-border-color: #1B2226;
+    -fx-text-fill: #FBFAF6;
+    -fx-font-weight: bold;
+}
+
+.app-dialog .button:focused {
+    -fx-border-color: -fx-copper;
+}
+
+.app-dialog .text-field,
+.app-dialog .password-field {
+    -fx-background-color: -fx-surface;
+    -fx-background-radius: 3;
+    -fx-border-color: -fx-hairline;
+    -fx-border-radius: 3;
+    -fx-border-width: 1;
+    -fx-padding: 7 10;
+    -fx-font-size: 13px;
+    -fx-text-fill: -fx-ink;
+    -fx-prompt-text-fill: #8A9196;
+}
+
+.app-dialog .text-field:focused,
+.app-dialog .password-field:focused {
+    -fx-border-color: -fx-copper;
+}
+
+.app-dialog .list-view {
+    -fx-background-color: -fx-surface;
+    -fx-border-color: -fx-hairline;
+    -fx-border-width: 1;
+    -fx-border-radius: 3;
+    -fx-background-radius: 3;
+}
+
+.app-dialog .list-cell {
+    -fx-background-color: -fx-surface;
+    -fx-text-fill: -fx-ink;
+    -fx-padding: 7 9;
+}
+
+.app-dialog .list-cell:odd {
+    -fx-background-color: #F7F4ED;
+}
+
+.app-dialog .list-cell:selected {
+    -fx-background-color: -fx-copper-soft;
+    -fx-text-fill: -fx-ink;
+}
+
+.app-dialog .separator .line {
+    -fx-border-color: -fx-hairline;
+}
+
+.dialog-scroll,
+.dialog-scroll > .viewport {
+    -fx-background-color: transparent;
+    -fx-background: transparent;
+    -fx-padding: 0;
+}
